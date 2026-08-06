@@ -40,6 +40,8 @@ public class DEREncodedKeyValue extends Signature11ElementProxy implements KeyIn
     private static final String[] supportedKeyTypes = { "RSA", "DSA", "EC",
             "DiffieHellman", "DH", "XDH", "X25519", "X448",
             "EdDSA", "Ed25519", "Ed448",
+            "ML-DSA-44", "ML-DSA-65", "ML-DSA-87",
+            "ML-KEM-512", "ML-KEM-768", "ML-KEM-1024",
             "RSASSA-PSS"};
 
     /**

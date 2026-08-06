@@ -25,6 +25,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import org.apache.xml.security.encryption.XMLCipher;
 import org.apache.xml.security.signature.XMLSignature;
+import org.apache.xml.security.utils.EncryptionConstants;
 import org.apache.xml.security.utils.JavaUtils;
 import org.w3c.dom.Element;
 
@@ -234,6 +235,18 @@ public class JCEMapper {
             new Algorithm("Ed448", "Ed448", "Signature")
         );
         algorithmsMap.put(
+            XMLSignature.ALGO_ID_SIGNATURE_MLDSA_44,
+            new Algorithm("ML-DSA-44", "ML-DSA-44", "Signature")
+        );
+        algorithmsMap.put(
+            XMLSignature.ALGO_ID_SIGNATURE_MLDSA_65,
+            new Algorithm("ML-DSA-65", "ML-DSA-65", "Signature")
+        );
+        algorithmsMap.put(
+            XMLSignature.ALGO_ID_SIGNATURE_MLDSA_87,
+            new Algorithm("ML-DSA-87", "ML-DSA-87", "Signature")
+        );
+        algorithmsMap.put(
             XMLSignature.ALGO_ID_MAC_HMAC_NOT_RECOMMENDED_MD5,
             new Algorithm("", "HmacMD5", "Mac", 0, 0)
         );
@@ -317,6 +330,22 @@ public class JCEMapper {
         algorithmsMap.put(
             XMLCipher.RSA_OAEP_11,
             new Algorithm("RSA", "RSA/ECB/OAEPPadding", "KeyTransport")
+        );
+        algorithmsMap.put(
+            EncryptionConstants.ALGO_ID_KEYTRANSPORT_MLKEM_512,
+            new Algorithm("ML-KEM-512", "ML-KEM-512", "KeyTransport")
+        );
+        algorithmsMap.put(
+            EncryptionConstants.ALGO_ID_KEYTRANSPORT_MLKEM_768,
+            new Algorithm("ML-KEM-768", "ML-KEM-768", "KeyTransport")
+        );
+        algorithmsMap.put(
+            EncryptionConstants.ALGO_ID_KEYTRANSPORT_MLKEM_1024,
+            new Algorithm("ML-KEM-1024", "ML-KEM-1024", "KeyTransport")
+        );
+        algorithmsMap.put(
+            EncryptionConstants.ALGO_ID_KEYTRANSPORT_GENERIC_HYBRID,
+            new Algorithm("", "", "KeyTransport")
         );
         algorithmsMap.put(
             XMLCipher.DIFFIE_HELLMAN,
