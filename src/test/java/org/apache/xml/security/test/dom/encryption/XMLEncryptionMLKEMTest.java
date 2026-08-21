@@ -45,7 +45,6 @@ import org.apache.xml.security.utils.KeyUtils;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.w3c.dom.Document;
@@ -220,15 +219,21 @@ class XMLEncryptionMLKEMTest {
         assertEquals("CardNumber:4019111111111111", decryptedRoot.getTextContent());
     }
 
-    @Test
-    void testMLKEMWrongRecipientPrivateKeyFailsCleanly() throws Exception {
+    @ParameterizedTest
+    @CsvSource({
+        EncryptionConstants.ALGO_ID_KEYTRANSPORT_MLKEM_512  + ",ML-KEM-512",
+        EncryptionConstants.ALGO_ID_KEYTRANSPORT_MLKEM_768  + ",ML-KEM-768",
+        EncryptionConstants.ALGO_ID_KEYTRANSPORT_MLKEM_1024 + ",ML-KEM-1024",
+    })
+    void testMLKEMWrongRecipientPrivateKeyFailsCleanly(String keyEncapsulationUri, String jcaAlgorithm)
+            throws Exception {
         Assumptions.assumeTrue(mlKemAvailable, "ML-KEM requires BouncyCastle 1.84+ and Java 21+ (javax.crypto.KEM)");
 
-        PublicKey recipientAPub = keyPairs.get("ML-KEM-768").getPublic();
-        byte[] encryptedXml = encryptToRecipient(recipientAPub);
+        PublicKey recipientAPub = keyPairs.get(jcaAlgorithm).getPublic();
+        byte[] encryptedXml = encryptToRecipient(recipientAPub, keyEncapsulationUri);
 
         // A second, independent recipient - not the one the message was encrypted to.
-        KeyPairGenerator kpg = KeyPairGenerator.getInstance("ML-KEM-768", "BC");
+        KeyPairGenerator kpg = KeyPairGenerator.getInstance(jcaAlgorithm, "BC");
         PrivateKey wrongPrivateKey = kpg.generateKeyPair().getPrivate();
 
         DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
@@ -254,13 +259,18 @@ class XMLEncryptionMLKEMTest {
                 () -> unwrapCipher.decryptKey(ek, encData.getEncryptionMethod().getAlgorithm()));
     }
 
-    @Test
-    void testMLKEMTruncatedEncapsulationRejected() throws Exception {
+    @ParameterizedTest
+    @CsvSource({
+        EncryptionConstants.ALGO_ID_KEYTRANSPORT_MLKEM_512  + ",ML-KEM-512",
+        EncryptionConstants.ALGO_ID_KEYTRANSPORT_MLKEM_768  + ",ML-KEM-768",
+        EncryptionConstants.ALGO_ID_KEYTRANSPORT_MLKEM_1024 + ",ML-KEM-1024",
+    })
+    void testMLKEMTruncatedEncapsulationRejected(String keyEncapsulationUri, String jcaAlgorithm) throws Exception {
         Assumptions.assumeTrue(mlKemAvailable, "ML-KEM requires BouncyCastle 1.84+ and Java 21+ (javax.crypto.KEM)");
 
-        PrivateKey privKey = keyPairs.get("ML-KEM-768").getPrivate();
-        PublicKey pubKey = keyPairs.get("ML-KEM-768").getPublic();
-        byte[] encryptedXml = encryptToRecipient(pubKey);
+        PrivateKey privKey = keyPairs.get(jcaAlgorithm).getPrivate();
+        PublicKey pubKey = keyPairs.get(jcaAlgorithm).getPublic();
+        byte[] encryptedXml = encryptToRecipient(pubKey, keyEncapsulationUri);
 
         DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
         dbf.setNamespaceAware(true);
@@ -296,13 +306,11 @@ class XMLEncryptionMLKEMTest {
     }
 
     /**
-     * Runs the encrypt half of the ML-KEM-768 round trip (same structure as
-     * {@link #testMLKEMEncryptDecrypt}) and returns the serialised encrypted XML, for tests that
-     * want to corrupt or otherwise interfere with the decrypt half.
+     * Runs the encrypt half of the round trip for the given key encapsulation algorithm (same
+     * structure as {@link #testMLKEMEncryptDecrypt}) and returns the serialised encrypted XML,
+     * for tests that want to corrupt or otherwise interfere with the decrypt half.
      */
-    private byte[] encryptToRecipient(PublicKey pubKey) throws Exception {
-        String keyEncapsulationUri = EncryptionConstants.ALGO_ID_KEYTRANSPORT_MLKEM_768;
-
+    private byte[] encryptToRecipient(PublicKey pubKey, String keyEncapsulationUri) throws Exception {
         DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
         dbf.setNamespaceAware(true);
         Document doc = dbf.newDocumentBuilder().newDocument();

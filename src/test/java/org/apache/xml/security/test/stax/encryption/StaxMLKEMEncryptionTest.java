@@ -61,7 +61,6 @@ import org.apache.xml.security.utils.XMLUtils;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.w3c.dom.Document;
@@ -278,15 +277,21 @@ class StaxMLKEMEncryptionTest {
         return cipher.doFinal(document, ee);
     }
 
-    @Test
-    void testMLKEMStaxWrongRecipientPrivateKeyFailsCleanly() throws Exception {
+    @ParameterizedTest
+    @CsvSource({
+        EncryptionConstants.ALGO_ID_KEYTRANSPORT_MLKEM_512  + ",ML-KEM-512",
+        EncryptionConstants.ALGO_ID_KEYTRANSPORT_MLKEM_768  + ",ML-KEM-768",
+        EncryptionConstants.ALGO_ID_KEYTRANSPORT_MLKEM_1024 + ",ML-KEM-1024"
+    })
+    void testMLKEMStaxWrongRecipientPrivateKeyFailsCleanly(String keyEncapsulationUri, String jcaAlgorithm)
+            throws Exception {
         Assumptions.assumeTrue(mlKemAvailable, "ML-KEM requires BouncyCastle 1.84+ and Java 21+ (javax.crypto.KEM)");
 
-        KeyPair kp = keyPairs.get("ML-KEM-768");
-        Document document = encryptToRecipient(kp.getPublic());
+        KeyPair kp = keyPairs.get(jcaAlgorithm);
+        Document document = encryptToRecipient(kp.getPublic(), keyEncapsulationUri);
 
         // A second, independent recipient - not the one the message was encrypted to.
-        KeyPairGenerator kpg = KeyPairGenerator.getInstance("ML-KEM-768", "BC");
+        KeyPairGenerator kpg = KeyPairGenerator.getInstance(jcaAlgorithm, "BC");
         PrivateKey wrongPrivateKey = kpg.generateKeyPair().getPrivate();
 
         // See the equivalent DOM-path test (XMLEncryptionMLKEMTest) for why this must throw
@@ -294,12 +299,18 @@ class StaxMLKEMEncryptionTest {
         assertThrows(XMLEncryptionException.class, () -> decryptUsingDOM(document, wrongPrivateKey));
     }
 
-    @Test
-    void testMLKEMStaxTruncatedEncapsulationRejected() throws Exception {
+    @ParameterizedTest
+    @CsvSource({
+        EncryptionConstants.ALGO_ID_KEYTRANSPORT_MLKEM_512  + ",ML-KEM-512",
+        EncryptionConstants.ALGO_ID_KEYTRANSPORT_MLKEM_768  + ",ML-KEM-768",
+        EncryptionConstants.ALGO_ID_KEYTRANSPORT_MLKEM_1024 + ",ML-KEM-1024"
+    })
+    void testMLKEMStaxTruncatedEncapsulationRejected(String keyEncapsulationUri, String jcaAlgorithm)
+            throws Exception {
         Assumptions.assumeTrue(mlKemAvailable, "ML-KEM requires BouncyCastle 1.84+ and Java 21+ (javax.crypto.KEM)");
 
-        KeyPair kp = keyPairs.get("ML-KEM-768");
-        Document document = encryptToRecipient(kp.getPublic());
+        KeyPair kp = keyPairs.get(jcaAlgorithm);
+        Document document = encryptToRecipient(kp.getPublic(), keyEncapsulationUri);
 
         // Truncate the EncryptedKey's CipherValue to well under half its length - shorter than
         // any ML-KEM variant's encapsulationSize() - before it is parsed into an EncryptedKey
@@ -324,11 +335,12 @@ class StaxMLKEMEncryptionTest {
     }
 
     /**
-     * Runs the encrypt half of the ML-KEM-768 round trip (same properties as
-     * {@link #testMLKEMEncryptDecrypt}) and returns the parsed resulting document, for tests
-     * that want to corrupt or otherwise interfere with the decrypt half.
+     * Runs the encrypt half of the round trip for the given key encapsulation algorithm (same
+     * properties as {@link #testMLKEMEncryptDecrypt}) and returns the parsed resulting document,
+     * for tests that want to corrupt or otherwise interfere with the decrypt half.
      */
-    private Document encryptToRecipient(java.security.PublicKey pubKey) throws Exception {
+    private Document encryptToRecipient(java.security.PublicKey pubKey, String keyEncapsulationUri)
+            throws Exception {
         XMLSecurityProperties properties = new XMLSecurityProperties();
         List<XMLSecurityConstants.Action> actions = new ArrayList<>();
         actions.add(XMLSecurityConstants.ENCRYPTION);
@@ -341,7 +353,7 @@ class StaxMLKEMEncryptionTest {
         properties.setEncryptionSymAlgorithm("http://www.w3.org/2009/xmlenc11#aes256-gcm");
 
         properties.setEncryptionKeyTransportAlgorithm(EncryptionConstants.ALGO_ID_KEYTRANSPORT_GENERIC_HYBRID);
-        properties.setEncryptionKeyEncapsulationAlgorithm(EncryptionConstants.ALGO_ID_KEYTRANSPORT_MLKEM_768);
+        properties.setEncryptionKeyEncapsulationAlgorithm(keyEncapsulationUri);
         properties.setEncryptionDataEncapsulationAlgorithm(EncryptionConstants.ALGO_ID_KEYWRAP_AES256);
         properties.setEncryptionTransportKey(pubKey);
 
