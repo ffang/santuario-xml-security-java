@@ -18,6 +18,8 @@
  */
 package org.apache.xml.security.test.dom.encryption;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.security.Key;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
@@ -40,6 +42,7 @@ import org.apache.xml.security.keys.KeyInfo;
 import org.apache.xml.security.signature.XMLSignature;
 import org.apache.xml.security.utils.EncryptionConstants;
 import org.apache.xml.security.utils.KeyUtils;
+import org.apache.xml.security.utils.XMLUtils;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
@@ -47,8 +50,10 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
+import org.w3c.dom.NodeList;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -212,5 +217,114 @@ class XMLEncryptionMLKEMTest {
         Element decryptedRoot = decryptedDoc.getDocumentElement();
         assertEquals("PaymentInfo", decryptedRoot.getLocalName());
         assertEquals("CardNumber:4019111111111111", decryptedRoot.getTextContent());
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+        EncryptionConstants.ALGO_ID_KEYTRANSPORT_MLKEM_512  + ",ML-KEM-512",
+        EncryptionConstants.ALGO_ID_KEYTRANSPORT_MLKEM_768  + ",ML-KEM-768",
+        EncryptionConstants.ALGO_ID_KEYTRANSPORT_MLKEM_1024 + ",ML-KEM-1024",
+    })
+    void testMLKEMWrongRecipientKeyFailsDecryption(String keyEncapsulationUri, String jcaAlgorithm) throws Exception {
+        Assumptions.assumeTrue(mlKemAvailable, "ML-KEM requires BouncyCastle 1.84+ and Java 21+ (javax.crypto.KEM)");
+        byte[] encryptedXml = encryptToRecipient(keyEncapsulationUri, keyPairs.get(jcaAlgorithm).getPublic());
+        // a different recipient key pair of the same ML-KEM parameter set
+        KeyPair wrongKeyPair = KeyPairGenerator.getInstance(jcaAlgorithm, "BC").generateKeyPair();
+        assertThrows(Exception.class, () -> decryptWith(encryptedXml, wrongKeyPair.getPrivate()),
+                "decryption with a non-matching ML-KEM private key must fail rather than return content");
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+        EncryptionConstants.ALGO_ID_KEYTRANSPORT_MLKEM_512  + ",ML-KEM-512",
+        EncryptionConstants.ALGO_ID_KEYTRANSPORT_MLKEM_768  + ",ML-KEM-768",
+        EncryptionConstants.ALGO_ID_KEYTRANSPORT_MLKEM_1024 + ",ML-KEM-1024",
+    })
+    void testMLKEMCorruptEncapsulationRejected(String keyEncapsulationUri, String jcaAlgorithm) throws Exception {
+        Assumptions.assumeTrue(mlKemAvailable, "ML-KEM requires BouncyCastle 1.84+ and Java 21+ (javax.crypto.KEM)");
+        byte[] encryptedXml = encryptToRecipient(keyEncapsulationUri, keyPairs.get(jcaAlgorithm).getPublic());
+        // ML-KEM implicit rejection means a corrupt encapsulation yields a different shared secret,
+        // so the failure surfaces at the AES key-unwrap integrity check rather than at decapsulation.
+        byte[] corrupted = corruptEncryptedKeyCipherValue(encryptedXml);
+        assertThrows(Exception.class, () -> decryptWith(corrupted, keyPairs.get(jcaAlgorithm).getPrivate()),
+                "decryption of a corrupted ML-KEM encapsulation must fail rather than return content");
+    }
+
+    private static byte[] encryptToRecipient(String keyEncapsulationUri, PublicKey recipientPublicKey) throws Exception {
+        DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
+        dbf.setNamespaceAware(true);
+        Document doc = dbf.newDocumentBuilder().newDocument();
+        Element root = doc.createElement("PaymentInfo");
+        root.setTextContent("CardNumber:4019111111111111");
+        doc.appendChild(root);
+
+        KeyGenerator kg = KeyGenerator.getInstance("AES");
+        kg.init(256);
+        SecretKey cek = kg.generateKey();
+
+        String kwAlgorithm = EncryptionConstants.ALGO_ID_KEYWRAP_AES256;
+        int wrapKeyBitLength = KeyUtils.getAESKeyBitSizeForWrapAlgorithm(kwAlgorithm);
+        HKDFParams kdfParams = HKDFParams.createBuilder(wrapKeyBitLength, XMLSignature.ALGO_ID_MAC_HMAC_SHA256).build();
+        AlgorithmParameterSpec keyEncapsulationParameters =
+                new KeyEncapsulationParameters(keyEncapsulationUri, kdfParams);
+
+        XMLCipher keyCipher = XMLCipher.getInstance(kwAlgorithm);
+        keyCipher.init(XMLCipher.WRAP_MODE, recipientPublicKey);
+        EncryptedKey encryptedKey = keyCipher.encryptKey(doc, cek, keyEncapsulationParameters, null);
+
+        XMLCipher dataCipher = XMLCipher.getInstance(XMLCipher.AES_256_GCM);
+        dataCipher.init(XMLCipher.ENCRYPT_MODE, cek);
+        EncryptedData encryptedData = dataCipher.getEncryptedData();
+        KeyInfo keyInfo = new KeyInfo(doc);
+        keyInfo.add(encryptedKey);
+        encryptedData.setKeyInfo(keyInfo);
+        doc = dataCipher.doFinal(doc, root, false);
+
+        ByteArrayOutputStream bos = new ByteArrayOutputStream();
+        javax.xml.transform.Transformer t =
+                javax.xml.transform.TransformerFactory.newInstance().newTransformer();
+        t.transform(new javax.xml.transform.dom.DOMSource(doc),
+                    new javax.xml.transform.stream.StreamResult(bos));
+        return bos.toByteArray();
+    }
+
+    private static String decryptWith(byte[] encryptedXml, PrivateKey recipientPrivateKey) throws Exception {
+        DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
+        dbf.setNamespaceAware(true);
+        Document encDoc = dbf.newDocumentBuilder().parse(new ByteArrayInputStream(encryptedXml));
+        Element encDataElem = (Element) encDoc.getElementsByTagNameNS(
+                EncryptionConstants.EncryptionSpecNS, "EncryptedData").item(0);
+
+        XMLCipher decryptCipher = XMLCipher.getInstance();
+        decryptCipher.init(XMLCipher.DECRYPT_MODE, null);
+        EncryptedData encData = decryptCipher.loadEncryptedData(encDoc, encDataElem);
+
+        EncryptedKey ek = encData.getKeyInfo().itemEncryptedKey(0);
+        XMLCipher unwrapCipher = XMLCipher.getInstance();
+        unwrapCipher.init(XMLCipher.UNWRAP_MODE, recipientPrivateKey);
+        Key recoveredCek = unwrapCipher.decryptKey(ek, encData.getEncryptionMethod().getAlgorithm());
+
+        decryptCipher.init(XMLCipher.DECRYPT_MODE, recoveredCek);
+        Document decryptedDoc = decryptCipher.doFinal(encDoc, encDataElem);
+        return decryptedDoc.getDocumentElement().getTextContent();
+    }
+
+    private static byte[] corruptEncryptedKeyCipherValue(byte[] encryptedXml) throws Exception {
+        Document doc = XMLUtils.read(new ByteArrayInputStream(encryptedXml), false);
+        // the EncryptedKey's CipherValue holds (KEM encapsulation || wrapped CEK); flip a bit near the start
+        Element encKey = (Element) doc.getElementsByTagNameNS(
+                EncryptionConstants.EncryptionSpecNS, EncryptionConstants._TAG_ENCRYPTEDKEY).item(0);
+        NodeList cvs = encKey.getElementsByTagNameNS(
+                EncryptionConstants.EncryptionSpecNS, EncryptionConstants._TAG_CIPHERVALUE);
+        Element cipherValue = (Element) cvs.item(0);
+        byte[] blob = XMLUtils.decode(cipherValue.getTextContent().trim());
+        blob[0] ^= 0x01;
+        cipherValue.setTextContent(XMLUtils.encodeToString(blob));
+        ByteArrayOutputStream bos = new ByteArrayOutputStream();
+        javax.xml.transform.Transformer t =
+                javax.xml.transform.TransformerFactory.newInstance().newTransformer();
+        t.transform(new javax.xml.transform.dom.DOMSource(doc),
+                    new javax.xml.transform.stream.StreamResult(bos));
+        return bos.toByteArray();
     }
 }

@@ -18,19 +18,38 @@
  */
 package org.apache.xml.security.test.javax.xml.crypto.dsig;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.KeyPairGenerator;
 import java.security.KeyStore;
 import java.security.Provider;
+import java.security.PublicKey;
 import java.security.Security;
+import java.util.Locale;
+
+import javax.xml.crypto.AlgorithmMethod;
+import javax.xml.crypto.KeySelector;
+import javax.xml.crypto.KeySelectorResult;
+import javax.xml.crypto.XMLCryptoContext;
+import javax.xml.crypto.dsig.dom.DOMValidateContext;
+import javax.xml.crypto.dsig.keyinfo.KeyInfo;
 
 import org.apache.xml.security.signature.XMLSignature;
+import org.apache.xml.security.test.javax.xml.crypto.KeySelectors;
+import org.apache.xml.security.utils.Constants;
+import org.apache.xml.security.utils.XMLUtils;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.w3c.dom.Document;
+import org.w3c.dom.Element;
+import org.w3c.dom.NodeList;
 
 /**
  * Tests for ML-DSA (FIPS 204) XML digital signatures via the
@@ -103,6 +122,67 @@ class XMLSignatureMLDSATest extends XMLSignatureAbstract {
         byte[] signedXml = doSignWithJcpApi(signatureAlgorithmURI, alias, false);
         Assertions.assertNotNull(signedXml);
         assertValidSignatureWithJcpApi(signedXml, false);
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+        XMLSignature.ALGO_ID_SIGNATURE_MLDSA_44 + ",ml-dsa-44",
+        XMLSignature.ALGO_ID_SIGNATURE_MLDSA_65 + ",ml-dsa-65",
+        XMLSignature.ALGO_ID_SIGNATURE_MLDSA_87 + ",ml-dsa-87",
+    })
+    void testMLDSATamperedSignatureRejected(String signatureAlgorithmURI, String alias) throws Exception {
+        Assumptions.assumeTrue(mlDsaAvailable, "ML-DSA requires BouncyCastle 1.81+");
+        byte[] signedXml = doSignWithJcpApi(signatureAlgorithmURI, alias, false);
+        byte[] tampered = flipSignatureValueBit(signedXml);
+        Assertions.assertFalse(isValidSignature(tampered, new KeySelectors.RawX509KeySelector()),
+                "verification must fail when the signature value is altered");
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+        XMLSignature.ALGO_ID_SIGNATURE_MLDSA_44 + ",ml-dsa-44",
+        XMLSignature.ALGO_ID_SIGNATURE_MLDSA_65 + ",ml-dsa-65",
+        XMLSignature.ALGO_ID_SIGNATURE_MLDSA_87 + ",ml-dsa-87",
+    })
+    void testMLDSAWrongKeyFailsVerification(String signatureAlgorithmURI, String alias) throws Exception {
+        Assumptions.assumeTrue(mlDsaAvailable, "ML-DSA requires BouncyCastle 1.81+");
+        byte[] signedXml = doSignWithJcpApi(signatureAlgorithmURI, alias, false);
+        // a different key pair of the same ML-DSA parameter set
+        KeyPairGenerator kpg = KeyPairGenerator.getInstance(alias.toUpperCase(Locale.ROOT), "BC");
+        PublicKey wrongKey = kpg.generateKeyPair().getPublic();
+        Assertions.assertFalse(isValidSignature(signedXml, fixedKeySelector(wrongKey)),
+                "verification must fail against a public key that did not produce the signature");
+    }
+
+    private boolean isValidSignature(byte[] signedXml, KeySelector keySelector) throws Exception {
+        SignatureValidator validator = new SignatureValidator();
+        try (InputStream is = new ByteArrayInputStream(signedXml)) {
+            DOMValidateContext vc = validator.getValidateContext(is, keySelector, false);
+            updateIdReferences(vc, "SignedElement", "id");
+            return validator.validate(vc);
+        }
+    }
+
+    private static byte[] flipSignatureValueBit(byte[] signedXml) throws Exception {
+        Document doc = XMLUtils.read(new ByteArrayInputStream(signedXml), false);
+        NodeList nl = doc.getElementsByTagNameNS(Constants.SignatureSpecNS, Constants._TAG_SIGNATUREVALUE);
+        Element sigValue = (Element) nl.item(0);
+        byte[] sig = XMLUtils.decode(sigValue.getTextContent().trim());
+        sig[sig.length / 2] ^= 0x01;
+        sigValue.setTextContent(XMLUtils.encodeToString(sig));
+        ByteArrayOutputStream bos = new ByteArrayOutputStream();
+        XMLUtils.outputDOMc14nWithComments(doc, bos);
+        return bos.toByteArray();
+    }
+
+    private static KeySelector fixedKeySelector(final PublicKey key) {
+        return new KeySelector() {
+            @Override
+            public KeySelectorResult select(KeyInfo keyInfo, KeySelector.Purpose purpose,
+                                            AlgorithmMethod method, XMLCryptoContext context) {
+                return () -> key;
+            }
+        };
     }
 
     @Override
