@@ -211,6 +211,18 @@ public final class XMLSignature extends SignatureElementProxy {
     public static final String ALGO_ID_SIGNATURE_EDDSA_ED448 =
             "http://www.w3.org/2021/04/xmldsig-more#eddsa-ed448";
 
+    /**Signature - ML-DSA-44 (FIPS 204, provisional URI per draft-eastlake-rfc9231bis-xmlsec-uris section 3.3.15; not yet finalized, see SANTUARIO-634) */
+    public static final String ALGO_ID_SIGNATURE_MLDSA_44 =
+            "http://www.w3.org/tbd#ml-dsa-44";
+
+    /**Signature - ML-DSA-65 (FIPS 204, provisional URI per draft-eastlake-rfc9231bis-xmlsec-uris section 3.3.15; not yet finalized, see SANTUARIO-634) */
+    public static final String ALGO_ID_SIGNATURE_MLDSA_65 =
+            "http://www.w3.org/tbd#ml-dsa-65";
+
+    /**Signature - ML-DSA-87 (FIPS 204, provisional URI per draft-eastlake-rfc9231bis-xmlsec-uris section 3.3.15; not yet finalized, see SANTUARIO-634) */
+    public static final String ALGO_ID_SIGNATURE_MLDSA_87 =
+            "http://www.w3.org/tbd#ml-dsa-87";
+
 
     /**Signature - SHA3-224withECDSA */
     public static final String ALGO_ID_SIGNATURE_ECDSA_SHA3_224 =
