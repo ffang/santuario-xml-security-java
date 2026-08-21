@@ -22,6 +22,7 @@ import org.apache.xml.security.algorithms.JCEMapper;
 import org.apache.xml.security.encryption.keys.content.derivedKey.ConcatKDFParamsImpl;
 import org.apache.xml.security.encryption.keys.content.derivedKey.HKDFParamsImpl;
 import org.apache.xml.security.encryption.keys.content.derivedKey.KDFParams;
+import org.apache.xml.security.encryption.keys.content.derivedKey.KeyDerivationMethodImpl;
 import org.apache.xml.security.encryption.params.ConcatKDFParams;
 import org.apache.xml.security.encryption.params.HKDFParams;
 import org.apache.xml.security.encryption.params.KeyAgreementParameters;
@@ -29,6 +30,7 @@ import org.apache.xml.security.encryption.params.KeyDerivationParameters;
 import org.apache.xml.security.exceptions.XMLSecurityException;
 import org.apache.xml.security.utils.EncryptionConstants;
 import org.apache.xml.security.utils.KeyUtils;
+import org.w3c.dom.Document;
 
 import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.IvParameterSpec;
@@ -282,6 +284,54 @@ public final class XMLCipherUtil {
                     .build();
         }
         throw new XMLEncryptionException("unknownAlgorithm", keyDerivationAlgorithm);
+    }
+
+    /**
+     * Construct a {@code KeyDerivationMethod} DOM element from the given {@link KeyDerivationParameters}.
+     * The inverse of {@link #constructKeyDerivationParameter(KeyDerivationMethod, int)}. Supports the same
+     * two key derivation functions as the ECDH-ES/X25519/X448 key-agreement path: ConcatKDF and HKDF.
+     *
+     * @param doc the {@link Document} in which the {@code KeyDerivationMethod} element will be created
+     * @param keyDerivationParameter the key derivation parameters (e.g. {@link HKDFParams} or {@link ConcatKDFParams})
+     * @return the constructed {@code KeyDerivationMethod}
+     * @throws XMLEncryptionException if the key derivation algorithm is not supported
+     */
+    public static KeyDerivationMethod constructKeyDerivationMethod(Document doc, KeyDerivationParameters keyDerivationParameter)
+            throws XMLEncryptionException {
+        KeyDerivationMethodImpl keyDerivationMethod = new KeyDerivationMethodImpl(doc);
+        keyDerivationMethod.setAlgorithm(keyDerivationParameter.getAlgorithm());
+
+        KDFParams kdfParams;
+        if (keyDerivationParameter instanceof ConcatKDFParams) {
+            ConcatKDFParams kdfParameters = (ConcatKDFParams) keyDerivationParameter;
+            ConcatKDFParamsImpl concatKDFParams = new ConcatKDFParamsImpl(doc);
+            concatKDFParams.setDigestMethod(kdfParameters.getDigestAlgorithm());
+            concatKDFParams.setAlgorithmId(kdfParameters.getAlgorithmID());
+            concatKDFParams.setPartyUInfo(kdfParameters.getPartyUInfo());
+            concatKDFParams.setPartyVInfo(kdfParameters.getPartyVInfo());
+            concatKDFParams.setSuppPubInfo(kdfParameters.getSuppPubInfo());
+            concatKDFParams.setSuppPrivInfo(kdfParameters.getSuppPrivInfo());
+            kdfParams = concatKDFParams;
+        } else if (keyDerivationParameter instanceof HKDFParams) {
+            HKDFParams kdfParameters = (HKDFParams) keyDerivationParameter;
+            HKDFParamsImpl hkdfParams = new HKDFParamsImpl(doc);
+            hkdfParams.setPRFAlgorithm(kdfParameters.getHmacHashAlgorithm());
+            Base64.Encoder base64Encoder = Base64.getEncoder();
+            if (kdfParameters.getSalt() != null) {
+                hkdfParams.setSalt(base64Encoder.encodeToString(kdfParameters.getSalt()));
+            }
+            if (kdfParameters.getInfo() != null) {
+                hkdfParams.setInfo(base64Encoder.encodeToString(kdfParameters.getInfo()));
+            }
+            hkdfParams.setKeyLength(kdfParameters.getKeyBitLength() / 8);
+            kdfParams = hkdfParams;
+        } else {
+            throw new XMLEncryptionException("KeyDerivation.UnsupportedAlgorithm",
+                    keyDerivationParameter.getAlgorithm(), keyDerivationParameter.getClass().getName());
+        }
+
+        keyDerivationMethod.setKDFParams(kdfParams);
+        return keyDerivationMethod;
     }
 
     /**
