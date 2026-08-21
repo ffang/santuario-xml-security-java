@@ -47,7 +47,6 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.w3c.dom.Document;
@@ -131,10 +130,15 @@ class XMLSignatureMLDSATest extends XMLSignatureAbstract {
         assertValidSignatureWithJcpApi(signedXml, false);
     }
 
-    @Test
-    void testMLDSATamperedSignatureRejected() throws Exception {
+    @ParameterizedTest
+    @CsvSource({
+        XMLSignature.ALGO_ID_SIGNATURE_MLDSA_44 + ",ml-dsa-44",
+        XMLSignature.ALGO_ID_SIGNATURE_MLDSA_65 + ",ml-dsa-65",
+        XMLSignature.ALGO_ID_SIGNATURE_MLDSA_87 + ",ml-dsa-87",
+    })
+    void testMLDSATamperedSignatureRejected(String signatureAlgorithmURI, String alias) throws Exception {
         Assumptions.assumeTrue(mlDsaAvailable, "ML-DSA requires BouncyCastle 1.81+");
-        byte[] signedXml = doSignWithJcpApi(XMLSignature.ALGO_ID_SIGNATURE_MLDSA_65, "ml-dsa-65", false);
+        byte[] signedXml = doSignWithJcpApi(signatureAlgorithmURI, alias, false);
 
         byte[] tamperedXml = flipByteInSignatureValue(signedXml);
 
@@ -142,12 +146,17 @@ class XMLSignatureMLDSATest extends XMLSignatureAbstract {
         Assertions.assertFalse(coreValidity, "A tampered SignatureValue must not validate");
     }
 
-    @Test
-    void testMLDSAWrongPublicKeyRejected() throws Exception {
+    @ParameterizedTest
+    @CsvSource({
+        XMLSignature.ALGO_ID_SIGNATURE_MLDSA_44 + ",ml-dsa-44",
+        XMLSignature.ALGO_ID_SIGNATURE_MLDSA_65 + ",ml-dsa-65",
+        XMLSignature.ALGO_ID_SIGNATURE_MLDSA_87 + ",ml-dsa-87",
+    })
+    void testMLDSAWrongPublicKeyRejected(String signatureAlgorithmURI, String alias) throws Exception {
         Assumptions.assumeTrue(mlDsaAvailable, "ML-DSA requires BouncyCastle 1.81+");
-        byte[] signedXml = doSignWithJcpApi(XMLSignature.ALGO_ID_SIGNATURE_MLDSA_65, "ml-dsa-65", false);
+        byte[] signedXml = doSignWithJcpApi(signatureAlgorithmURI, alias, false);
 
-        KeyPairGenerator kpg = KeyPairGenerator.getInstance("ML-DSA-65", "BC");
+        KeyPairGenerator kpg = KeyPairGenerator.getInstance(alias.toUpperCase(), "BC");
         PublicKey wrongPublicKey = kpg.generateKeyPair().getPublic();
 
         KeySelector wrongKeySelector = new KeySelector() {

@@ -41,7 +41,6 @@ import org.apache.xml.security.utils.XMLUtils;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.w3c.dom.Document;
@@ -109,28 +108,38 @@ class StaxMLDSASignatureTest extends AbstractSignatureCreationTest {
         verifyUsingDOM(document, kp.getPublic(), properties.getSignatureSecureParts());
     }
 
-    @Test
-    void testMLDSAStaxTamperedSignatureRejected() throws Exception {
-        Assumptions.assumeTrue(isBcInstalled() && keyPairs.containsKey("ML-DSA-65"),
+    @ParameterizedTest
+    @CsvSource({
+        "http://www.w3.org/tbd#ml-dsa-44,ML-DSA-44",
+        "http://www.w3.org/tbd#ml-dsa-65,ML-DSA-65",
+        "http://www.w3.org/tbd#ml-dsa-87,ML-DSA-87"
+    })
+    void testMLDSAStaxTamperedSignatureRejected(String sigAlgorithm, String jcaAlgorithm) throws Exception {
+        Assumptions.assumeTrue(isBcInstalled() && keyPairs.containsKey(jcaAlgorithm),
             "ML-DSA requires BouncyCastle 1.81+");
 
-        Document document = signWithMLDSA65();
+        Document document = signWith(sigAlgorithm, jcaAlgorithm);
         Element sigElement = tamperSignatureValue(document);
 
         XMLSignature signature = new XMLSignature(sigElement, "");
-        boolean coreValidity = signature.checkSignatureValue(keyPairs.get("ML-DSA-65").getPublic());
+        boolean coreValidity = signature.checkSignatureValue(keyPairs.get(jcaAlgorithm).getPublic());
         Assertions.assertFalse(coreValidity, "A tampered SignatureValue must not validate");
     }
 
-    @Test
-    void testMLDSAStaxWrongPublicKeyRejected() throws Exception {
-        Assumptions.assumeTrue(isBcInstalled() && keyPairs.containsKey("ML-DSA-65"),
+    @ParameterizedTest
+    @CsvSource({
+        "http://www.w3.org/tbd#ml-dsa-44,ML-DSA-44",
+        "http://www.w3.org/tbd#ml-dsa-65,ML-DSA-65",
+        "http://www.w3.org/tbd#ml-dsa-87,ML-DSA-87"
+    })
+    void testMLDSAStaxWrongPublicKeyRejected(String sigAlgorithm, String jcaAlgorithm) throws Exception {
+        Assumptions.assumeTrue(isBcInstalled() && keyPairs.containsKey(jcaAlgorithm),
             "ML-DSA requires BouncyCastle 1.81+");
 
-        Document document = signWithMLDSA65();
+        Document document = signWith(sigAlgorithm, jcaAlgorithm);
         Element sigElement = (Element) document.getElementsByTagNameNS(Constants.SignatureSpecNS, "Signature").item(0);
 
-        KeyPairGenerator kpg = KeyPairGenerator.getInstance("ML-DSA-65", "BC");
+        KeyPairGenerator kpg = KeyPairGenerator.getInstance(jcaAlgorithm, "BC");
         PublicKey wrongPublicKey = kpg.generateKeyPair().getPublic();
 
         XMLSignature signature = new XMLSignature(sigElement, "");
@@ -138,15 +147,15 @@ class StaxMLDSASignatureTest extends AbstractSignatureCreationTest {
         Assertions.assertFalse(coreValidity, "Verification against the wrong public key must not validate");
     }
 
-    private Document signWithMLDSA65() throws Exception {
+    private Document signWith(String sigAlgorithm, String jcaAlgorithm) throws Exception {
         XMLSecurityProperties properties = new XMLSecurityProperties();
         List<XMLSecurityConstants.Action> actions = new ArrayList<>();
         actions.add(XMLSecurityConstants.SIGNATURE);
         properties.setActions(actions);
         properties.setSignatureKeyIdentifier(SecurityTokenConstants.KeyIdentifier_KeyValue);
-        properties.setSignatureAlgorithm("http://www.w3.org/tbd#ml-dsa-65");
+        properties.setSignatureAlgorithm(sigAlgorithm);
 
-        KeyPair kp = keyPairs.get("ML-DSA-65");
+        KeyPair kp = keyPairs.get(jcaAlgorithm);
         properties.setSignatureKey(kp.getPrivate());
         properties.setSignatureVerificationKey(kp.getPublic());
 
