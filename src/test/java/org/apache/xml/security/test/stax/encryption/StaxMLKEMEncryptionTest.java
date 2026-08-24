@@ -39,6 +39,7 @@ import javax.crypto.KeyGenerator;
 import javax.crypto.SecretKey;
 import javax.xml.namespace.QName;
 import javax.xml.stream.XMLInputFactory;
+import javax.xml.stream.XMLStreamException;
 import javax.xml.stream.XMLStreamReader;
 import javax.xml.stream.XMLStreamWriter;
 
@@ -332,6 +333,94 @@ class StaxMLKEMEncryptionTest {
         cipherValueElem.appendChild(newText);
 
         assertThrows(XMLEncryptionException.class, () -> decryptUsingDOM(document, kp.getPrivate()));
+    }
+
+    /**
+     * Wrong-recipient rejection driven through the real StAX inbound path
+     * ({@link InboundXMLSec#processInMessage}), not the DOM {@code XMLCipher} helper used by
+     * {@link #testMLKEMStaxWrongRecipientPrivateKeyFailsCleanly}. This exercises
+     * {@code XMLEncryptedKeyInputHandler}'s Generic Hybrid Cipher branch, which is otherwise only
+     * covered on the happy path. ML-KEM's implicit rejection means decapsulation with the wrong
+     * private key does not fail; the handler derives a wrong key-wrap key and substitutes a random
+     * CEK (timing mitigation), so rejection surfaces late at the AES-256-GCM tag check and reaches
+     * the caller as an {@link XMLStreamException}. The property under test is that the inbound path
+     * rejects the message rather than yielding plaintext.
+     */
+    @ParameterizedTest
+    @CsvSource({
+        EncryptionConstants.ALGO_ID_KEYTRANSPORT_MLKEM_512  + ",ML-KEM-512",
+        EncryptionConstants.ALGO_ID_KEYTRANSPORT_MLKEM_768  + ",ML-KEM-768",
+        EncryptionConstants.ALGO_ID_KEYTRANSPORT_MLKEM_1024 + ",ML-KEM-1024"
+    })
+    void testMLKEMStaxInboundWrongRecipientKeyRejected(String keyEncapsulationUri, String jcaAlgorithm)
+            throws Exception {
+        Assumptions.assumeTrue(mlKemAvailable, "ML-KEM requires BouncyCastle 1.84+ and Java 21+ (javax.crypto.KEM)");
+
+        KeyPair kp = keyPairs.get(jcaAlgorithm);
+        Document document = encryptToRecipient(kp.getPublic(), keyEncapsulationUri);
+
+        // A second, independent recipient - not the one the message was encrypted to.
+        KeyPairGenerator kpg = KeyPairGenerator.getInstance(jcaAlgorithm, "BC");
+        PrivateKey wrongPrivateKey = kpg.generateKeyPair().getPrivate();
+
+        assertThrows(XMLStreamException.class, () -> decryptUsingStax(document, wrongPrivateKey));
+    }
+
+    /**
+     * Truncated-encapsulation rejection driven through the StAX inbound path, the streaming
+     * counterpart of {@link #testMLKEMStaxTruncatedEncapsulationRejected} (which uses the DOM
+     * helper). A {@code CipherValue} shorter than any ML-KEM variant's {@code encapsulationSize()}
+     * fails the length check in {@code KeyUtils#kemDecapsulate}; the inbound handler catches that
+     * and substitutes a random CEK, so here too rejection surfaces at the GCM tag check as an
+     * {@link XMLStreamException}. The message must be rejected, not decrypted.
+     */
+    @ParameterizedTest
+    @CsvSource({
+        EncryptionConstants.ALGO_ID_KEYTRANSPORT_MLKEM_512  + ",ML-KEM-512",
+        EncryptionConstants.ALGO_ID_KEYTRANSPORT_MLKEM_768  + ",ML-KEM-768",
+        EncryptionConstants.ALGO_ID_KEYTRANSPORT_MLKEM_1024 + ",ML-KEM-1024"
+    })
+    void testMLKEMStaxInboundTruncatedEncapsulationRejected(String keyEncapsulationUri, String jcaAlgorithm)
+            throws Exception {
+        Assumptions.assumeTrue(mlKemAvailable, "ML-KEM requires BouncyCastle 1.84+ and Java 21+ (javax.crypto.KEM)");
+
+        KeyPair kp = keyPairs.get(jcaAlgorithm);
+        Document document = encryptToRecipient(kp.getPublic(), keyEncapsulationUri);
+
+        Element encryptedKeyElem = (Element) document.getElementsByTagNameNS(
+            XMLSecurityConstants.TAG_xenc_EncryptedKey.getNamespaceURI(),
+            XMLSecurityConstants.TAG_xenc_EncryptedKey.getLocalPart()).item(0);
+        Element cipherValueElem = (Element) encryptedKeyElem.getElementsByTagNameNS(
+            XMLSecurityConstants.TAG_xenc_EncryptedKey.getNamespaceURI(), "CipherValue").item(0);
+        byte[] combined = Base64.getMimeDecoder().decode(cipherValueElem.getTextContent());
+        byte[] truncated = Arrays.copyOf(combined, combined.length / 2);
+        NodeList children = cipherValueElem.getChildNodes();
+        for (int i = children.getLength() - 1; i >= 0; i--) {
+            cipherValueElem.removeChild(children.item(i));
+        }
+        cipherValueElem.appendChild(document.createTextNode(Base64.getEncoder().encodeToString(truncated)));
+
+        assertThrows(XMLStreamException.class, () -> decryptUsingStax(document, kp.getPrivate()));
+    }
+
+    /**
+     * Decrypts a document through the real StAX inbound path ({@link InboundXMLSec#processInMessage}
+     * + {@link StAX2DOM#readDoc}), the counterpart of {@link #decryptUsingDOM} for the tests that
+     * need to exercise the inbound {@code XMLEncryptedKeyInputHandler} rather than the DOM cipher.
+     */
+    private Document decryptUsingStax(Document document, PrivateKey key) throws Exception {
+        ByteArrayOutputStream bos = new ByteArrayOutputStream();
+        javax.xml.transform.TransformerFactory.newInstance().newTransformer().transform(
+            new javax.xml.transform.dom.DOMSource(document),
+            new javax.xml.transform.stream.StreamResult(bos));
+
+        XMLSecurityProperties decryptProperties = new XMLSecurityProperties();
+        decryptProperties.setDecryptionKey(key);
+        InboundXMLSec inboundXMLSec = XMLSec.getInboundWSSec(decryptProperties);
+        XMLStreamReader xmlStreamReader =
+            xmlInputFactory.createXMLStreamReader(new ByteArrayInputStream(bos.toByteArray()));
+        XMLStreamReader securityStreamReader = inboundXMLSec.processInMessage(xmlStreamReader, null, null);
+        return StAX2DOM.readDoc(securityStreamReader);
     }
 
     /**
