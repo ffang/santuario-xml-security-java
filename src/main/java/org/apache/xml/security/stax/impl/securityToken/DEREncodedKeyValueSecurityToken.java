@@ -68,8 +68,12 @@ public class DEREncodedKeyValueSecurityToken extends AbstractInboundSecurityToke
                 if (publicKey != null) {
                     return publicKey;
                 }
-            } catch (NoSuchAlgorithmException | InvalidKeySpecException e) { //NOPMD
-                // Not this key type; try the next one
+            } catch (NoSuchAlgorithmException | InvalidKeySpecException | RuntimeException e) { //NOPMD
+                // Not this key type; try the next one. Some providers (e.g. BouncyCastle's
+                // XDH/EdDSA KeyFactorySpi) throw an unchecked exception such as
+                // ArrayIndexOutOfBoundsException instead of InvalidKeySpecException for
+                // malformed or short input, which must not propagate since encodedKey here is
+                // untrusted, attacker-controlled inbound content.
             }
         }
         throw new XMLSecurityException("stax.unsupportedKeyValue");

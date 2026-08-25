@@ -203,6 +203,55 @@ class StaxMLDSAKeyValueInboundTest extends AbstractSignatureCreationTest {
         return bos.toByteArray();
     }
 
+    /**
+     * A DEREncodedKeyValue whose content is garbage (decodes to no valid SubjectPublicKeyInfo)
+     * must be rejected cleanly at key resolution, not crash the pipeline with an uncaught
+     * RuntimeException. Some providers throw an unchecked exception (e.g. BouncyCastle's
+     * XDH/EdDSA KeyFactorySpi throws ArrayIndexOutOfBoundsException) for malformed input, and
+     * inbound KeyInfo content is attacker-controlled.
+     */
+    @ParameterizedTest
+    @CsvSource({
+        "http://www.w3.org/tbd#ml-dsa-44,ML-DSA-44",
+        "http://www.w3.org/tbd#ml-dsa-65,ML-DSA-65",
+        "http://www.w3.org/tbd#ml-dsa-87,ML-DSA-87"
+    })
+    void testInboundGarbageDerContentRejectedCleanly(String sigAlgorithm, String jcaAlgorithm) throws Exception {
+        Assumptions.assumeTrue(isBcInstalled() && keyPairs.containsKey(jcaAlgorithm),
+            "ML-DSA requires BouncyCastle 1.81+");
+
+        KeyPair kp = keyPairs.get(jcaAlgorithm);
+        byte[] corrupted = corruptDerEncodedKeyValue(signWithKeyValue(sigAlgorithm, kp));
+
+        XMLStreamException ex = Assertions.assertThrows(XMLStreamException.class,
+            () -> verifyInbound(corrupted, new ArrayList<>()));
+        String chain = messageChain(ex);
+        Assertions.assertFalse(chain.contains("ArrayIndexOutOfBoundsException"),
+            "Malformed DEREncodedKeyValue content must not surface as an uncaught RuntimeException: " + chain);
+    }
+
+    /** Replaces the DEREncodedKeyValue's base64 content with bytes that decode to no known SubjectPublicKeyInfo. */
+    private byte[] corruptDerEncodedKeyValue(byte[] signed) throws Exception {
+        Document document;
+        try (InputStream is = new ByteArrayInputStream(signed)) {
+            document = XMLUtils.read(is, false);
+        }
+        Element der = (Element) document.getElementsByTagNameNS(
+            "http://www.w3.org/2009/xmldsig11#", "DEREncodedKeyValue").item(0);
+        byte[] garbage = {0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07};
+        NodeList children = der.getChildNodes();
+        for (int i = children.getLength() - 1; i >= 0; i--) {
+            der.removeChild(children.item(i));
+        }
+        der.appendChild(document.createTextNode(Base64.getEncoder().encodeToString(garbage)));
+
+        ByteArrayOutputStream bos = new ByteArrayOutputStream();
+        javax.xml.transform.TransformerFactory.newInstance().newTransformer().transform(
+            new javax.xml.transform.dom.DOMSource(document),
+            new javax.xml.transform.stream.StreamResult(bos));
+        return bos.toByteArray();
+    }
+
     private Document verifyInbound(byte[] signed, List<SecurityEvent> events) throws Exception {
         XMLSecurityProperties properties = new XMLSecurityProperties();
         // deliberately no setSignatureVerificationKey(...)
