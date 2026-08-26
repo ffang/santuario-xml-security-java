@@ -2607,7 +2607,7 @@ public final class XMLCipher {
          * @param element
          * @return a new EncryptionMethod
          */
-        EncryptionMethod newEncryptionMethod(Element element) {
+        EncryptionMethod newEncryptionMethod(Element element) throws XMLEncryptionException {
             String encAlgorithm = element.getAttributeNS(null, EncryptionConstants._ATT_ALGORITHM);
             EncryptionMethod result = newEncryptionMethod(encAlgorithm);
 
@@ -2668,7 +2668,7 @@ public final class XMLCipher {
                             result.setKeyEncapsulationKeyDerivationMethod(
                                 new KeyDerivationMethodImpl(keyDerivationMethodElement, null));
                         } catch (XMLSecurityException xse) {
-                            throw new RuntimeException(xse);
+                            throw new XMLEncryptionException(xse);
                         }
                     }
 
@@ -2678,7 +2678,7 @@ public final class XMLCipher {
                             EncryptionConstants._TAG_KEYLEN).item(0);
                     if (keyLenElement != null) {
                         result.setKeyEncapsulationKeyLength(
-                            Integer.parseInt(keyLenElement.getFirstChild().getNodeValue()));
+                            parseKeyEncapsulationKeyLength(keyLenElement));
                     }
                 }
 
@@ -2696,6 +2696,26 @@ public final class XMLCipher {
             // <any namespace='##other' minOccurs='0' maxOccurs='unbounded'/>
 
             return result;
+        }
+
+        /**
+         * Parses the {@code ghc:KeyLen} element content. The element is read from the
+         * (untrusted) message, so a missing, empty or non-numeric value is reported as an
+         * {@link XMLEncryptionException}, the exception type the decrypt API declares, rather
+         * than escaping as a {@code NullPointerException} or {@code NumberFormatException}.
+         */
+        private int parseKeyEncapsulationKeyLength(Element keyLenElement) throws XMLEncryptionException {
+            Node child = keyLenElement.getFirstChild();
+            String text = child == null ? null : child.getNodeValue();
+            if (text == null || text.trim().isEmpty()) {
+                throw new XMLEncryptionException("KeyDerivation.InvalidParameter", EncryptionConstants._TAG_KEYLEN);
+            }
+            try {
+                return Integer.parseInt(text.trim());
+            } catch (NumberFormatException e) {
+                throw new XMLEncryptionException(e, "KeyDerivation.InvalidParameter",
+                    new Object[]{EncryptionConstants._TAG_KEYLEN});
+            }
         }
 
         /**

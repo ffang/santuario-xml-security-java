@@ -45,6 +45,7 @@ import org.apache.xml.security.utils.KeyUtils;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.w3c.dom.Document;
@@ -53,6 +54,7 @@ import org.w3c.dom.NodeList;
 import org.w3c.dom.Text;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -78,6 +80,9 @@ class XMLEncryptionMLKEMTest {
 
     private static boolean mlKemAvailable;
     private static boolean bcAddedForTheTest;
+
+    /** Namespace of the HKDFParams / Salt / Info elements (xmldsig-more, 2021). */
+    private static final String XMLDSIG_MORE_NS = "http://www.w3.org/2021/04/xmldsig-more#";
 
     private static java.util.Map<String, KeyPair> keyPairs = new java.util.HashMap<>();
 
@@ -311,6 +316,13 @@ class XMLEncryptionMLKEMTest {
      * for tests that want to corrupt or otherwise interfere with the decrypt half.
      */
     private byte[] encryptToRecipient(PublicKey pubKey, String keyEncapsulationUri) throws Exception {
+        int wrapKeyBitLength = KeyUtils.getAESKeyBitSizeForWrapAlgorithm(EncryptionConstants.ALGO_ID_KEYWRAP_AES256);
+        HKDFParams kdfParams = HKDFParams.createBuilder(wrapKeyBitLength, XMLSignature.ALGO_ID_MAC_HMAC_SHA256).build();
+        return encryptToRecipient(pubKey, keyEncapsulationUri, kdfParams);
+    }
+
+    private byte[] encryptToRecipient(PublicKey pubKey, String keyEncapsulationUri, HKDFParams kdfParams)
+            throws Exception {
         DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
         dbf.setNamespaceAware(true);
         Document doc = dbf.newDocumentBuilder().newDocument();
@@ -323,8 +335,6 @@ class XMLEncryptionMLKEMTest {
         SecretKey cek = kg.generateKey();
 
         String kwAlgorithm = EncryptionConstants.ALGO_ID_KEYWRAP_AES256;
-        int wrapKeyBitLength = KeyUtils.getAESKeyBitSizeForWrapAlgorithm(kwAlgorithm);
-        HKDFParams kdfParams = HKDFParams.createBuilder(wrapKeyBitLength, XMLSignature.ALGO_ID_MAC_HMAC_SHA256).build();
         AlgorithmParameterSpec keyEncapsulationParameters =
                 new KeyEncapsulationParameters(keyEncapsulationUri, kdfParams);
 
@@ -348,6 +358,85 @@ class XMLEncryptionMLKEMTest {
         t.transform(new javax.xml.transform.dom.DOMSource(doc),
                     new javax.xml.transform.stream.StreamResult(bos));
         return bos.toByteArray();
+    }
+
+
+    /**
+     * Malformed key-transport metadata in the EncryptedKey must be rejected as
+     * {@link XMLEncryptionException}, the decrypt API's declared failure type, rather than
+     * escaping as a NumberFormatException (non-numeric or empty {@code ghc:KeyLen}) or an
+     * IllegalArgumentException (malformed base64 in the HKDF {@code Salt} or {@code Info}).
+     * All of these values are parsed from the untrusted message before any private-key operation.
+     */
+    @ParameterizedTest
+    @CsvSource({
+        EncryptionConstants.EncryptionSpecGHCNS + ",KeyLen,notanumber",
+        EncryptionConstants.EncryptionSpecGHCNS + ",KeyLen,''",
+        XMLDSIG_MORE_NS + ",Salt,!!!not-base64!!!",
+        XMLDSIG_MORE_NS + ",Info,@@@@"
+    })
+    void testMLKEMMalformedKeyTransportMetadataRejected(String namespace, String localName, String badText)
+            throws Exception {
+        Assumptions.assumeTrue(mlKemAvailable, "ML-KEM requires BouncyCastle 1.84+ and Java 21+ (javax.crypto.KEM)");
+
+        KeyPair kp = keyPairs.get("ML-KEM-768");
+        Document encDoc = parse(encryptToRecipientWithHkdfSaltAndInfo(kp.getPublic()));
+        Element target = (Element) encDoc.getElementsByTagNameNS(namespace, localName).item(0);
+        assertNotNull(target, "expected a <" + localName + "> element to mutate");
+        replaceTextContent(encDoc, target, badText);
+
+        assertThrows(XMLEncryptionException.class, () -> decryptDocument(encDoc, kp.getPrivate()));
+    }
+
+    /**
+     * A childless {@code <ghc:KeyLen/>} has no text node at all; reading it must not surface as
+     * a NullPointerException from the decrypt path.
+     */
+    @Test
+    void testMLKEMChildlessKeyLenRejected() throws Exception {
+        Assumptions.assumeTrue(mlKemAvailable, "ML-KEM requires BouncyCastle 1.84+ and Java 21+ (javax.crypto.KEM)");
+
+        KeyPair kp = keyPairs.get("ML-KEM-768");
+        Document encDoc = parse(encryptToRecipient(kp.getPublic(), EncryptionConstants.ALGO_ID_KEYTRANSPORT_MLKEM_768));
+        Element keyLen = (Element) encDoc.getElementsByTagNameNS(
+                EncryptionConstants.EncryptionSpecGHCNS, "KeyLen").item(0);
+        assertNotNull(keyLen, "expected a <KeyLen> element to mutate");
+        while (keyLen.hasChildNodes()) {
+            keyLen.removeChild(keyLen.getFirstChild());
+        }
+
+        assertThrows(XMLEncryptionException.class, () -> decryptDocument(encDoc, kp.getPrivate()));
+    }
+
+    /** Encrypts with an HKDF that carries explicit Salt and Info elements, so they exist to mutate. */
+    private byte[] encryptToRecipientWithHkdfSaltAndInfo(PublicKey pubKey) throws Exception {
+        int wrapKeyBitLength = KeyUtils.getAESKeyBitSizeForWrapAlgorithm(EncryptionConstants.ALGO_ID_KEYWRAP_AES256);
+        HKDFParams kdfParams = HKDFParams.createBuilder(wrapKeyBitLength, XMLSignature.ALGO_ID_MAC_HMAC_SHA256)
+                .salt(new byte[]{1, 2, 3, 4, 5, 6, 7, 8})
+                .info(new byte[]{9, 10, 11, 12})
+                .build();
+        return encryptToRecipient(pubKey, EncryptionConstants.ALGO_ID_KEYTRANSPORT_MLKEM_768, kdfParams);
+    }
+
+    private Document parse(byte[] xml) throws Exception {
+        DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
+        dbf.setNamespaceAware(true);
+        return dbf.newDocumentBuilder().parse(new java.io.ByteArrayInputStream(xml));
+    }
+
+    /** The full decrypt path: load the EncryptedData, unwrap the CEK with the ML-KEM private key, decrypt. */
+    private void decryptDocument(Document encDoc, PrivateKey privKey) throws Exception {
+        Element encDataElem = (Element) encDoc.getElementsByTagNameNS(
+                EncryptionConstants.EncryptionSpecNS, "EncryptedData").item(0);
+        XMLCipher decryptCipher = XMLCipher.getInstance();
+        decryptCipher.init(XMLCipher.DECRYPT_MODE, null);
+        EncryptedData encData = decryptCipher.loadEncryptedData(encDoc, encDataElem);
+        EncryptedKey ek = encData.getKeyInfo().itemEncryptedKey(0);
+        XMLCipher unwrapCipher = XMLCipher.getInstance();
+        unwrapCipher.init(XMLCipher.UNWRAP_MODE, privKey);
+        Key cek = unwrapCipher.decryptKey(ek, encData.getEncryptionMethod().getAlgorithm());
+        decryptCipher.init(XMLCipher.DECRYPT_MODE, cek);
+        decryptCipher.doFinal(encDoc, encDataElem);
     }
 
     private void replaceTextContent(Document doc, Element element, String newText) {
