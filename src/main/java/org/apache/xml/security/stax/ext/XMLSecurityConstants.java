@@ -179,7 +179,7 @@ public class XMLSecurityConstants {
     public static final QName TAG_hkdf_Salt = new QName(NS_DSIG_MORE_2021_04, "Salt", PREFIX_HKDF);
     public static final QName TAG_hkdf_Info = new QName(NS_DSIG_MORE_2021_04, "Info", PREFIX_HKDF);
     public static final QName TAG_hkdf_KeyLength = new QName(NS_DSIG_MORE_2021_04, "KeyLength", PREFIX_HKDF);
-    /** HKDF key derivation algorithm URI (RFC 9231 provisional naming pattern) */
+    /** HKDF key derivation algorithm URI (draft-eastlake-rfc9231bis-xmlsec-uris-09 section 3.8.1) */
     public static final String NS_HKDF = NS_DSIG_MORE_2021_04 + "hkdf";
 
     public static final String PREFIX_DSIG = "dsig";

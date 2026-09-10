@@ -250,24 +250,22 @@ public final class EncryptionConstants {
     public static final String ALGO_ID_KEYTRANSPORT_GENERIC_HYBRID =
             EncryptionConstants.EncryptionSpecGHCNS + "generic-hybrid";
 
-    // Provisional URIs for ML-KEM (FIPS 203) key encapsulation, per
-    // draft-eastlake-rfc9231bis-xmlsec-uris section 3.6.9. These use the draft's "tbd"
-    // placeholder namespace; no official W3C URI has been assigned yet, update once
-    // standardised (see SANTUARIO-634). Used as the value of
+    // URIs for ML-KEM (FIPS 203) key encapsulation, per
+    // draft-eastlake-rfc9231bis-xmlsec-uris-09 section 3.6.9. Used as the value of
     // ghc:GenericHybridCipherMethod/ghc:KeyEncapsulationMethod/@Algorithm, not as a
     // top-level xenc:EncryptionMethod algorithm (see SANTUARIO-633, ALGO_ID_KEYTRANSPORT_GENERIC_HYBRID).
 
     /** Key Encapsulation - ML-KEM-512 (FIPS 203, NIST security level 1) */
     public static final String ALGO_ID_KEYTRANSPORT_MLKEM_512 =
-            "http://www.w3.org/tbd#ml-kem-512";
+            "http://www.w3.org/2026/08/xmldsig-more#ml-kem-512";
 
     /** Key Encapsulation - ML-KEM-768 (FIPS 203, NIST security level 3) */
     public static final String ALGO_ID_KEYTRANSPORT_MLKEM_768 =
-            "http://www.w3.org/tbd#ml-kem-768";
+            "http://www.w3.org/2026/08/xmldsig-more#ml-kem-768";
 
     /** Key Encapsulation - ML-KEM-1024 (FIPS 203, NIST security level 5) */
     public static final String ALGO_ID_KEYTRANSPORT_MLKEM_1024 =
-            "http://www.w3.org/tbd#ml-kem-1024";
+            "http://www.w3.org/2026/08/xmldsig-more#ml-kem-1024";
 
     /** Key Agreement - OPTIONAL Diffie-Hellman */
     public static final String ALGO_ID_KEYAGREEMENT_DH =
