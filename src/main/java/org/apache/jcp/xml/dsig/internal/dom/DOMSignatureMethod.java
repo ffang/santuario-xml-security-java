@@ -95,15 +95,14 @@ public abstract class DOMSignatureMethod extends AbstractDOMSignatureMethod {
     static final String ED448 =
         "http://www.w3.org/2021/04/xmldsig-more#eddsa-ed448";
 
-    // Provisional URIs for ML-DSA (FIPS 204) per draft-eastlake-rfc9231bis-xmlsec-uris
-    // section 3.3.15. These use the draft's "tbd" placeholder namespace and will need
-    // to be updated once final URIs are assigned (see SANTUARIO-634).
+    // URIs for ML-DSA (FIPS 204) per draft-eastlake-rfc9231bis-xmlsec-uris-09
+    // section 3.3.15 (see SANTUARIO-634).
     static final String ML_DSA_44 =
-        "http://www.w3.org/tbd#ml-dsa-44";
+        "http://www.w3.org/2026/08/xmldsig-more#ml-dsa-44";
     static final String ML_DSA_65 =
-        "http://www.w3.org/tbd#ml-dsa-65";
+        "http://www.w3.org/2026/08/xmldsig-more#ml-dsa-65";
     static final String ML_DSA_87 =
-        "http://www.w3.org/tbd#ml-dsa-87";
+        "http://www.w3.org/2026/08/xmldsig-more#ml-dsa-87";
     static final String ECDSA_SHA3_224 =
         "http://www.w3.org/2021/04/xmldsig-more#ecdsa-sha3-224";
     static final String ECDSA_SHA3_256 =

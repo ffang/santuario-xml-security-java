@@ -78,9 +78,9 @@ class StaxMLDSAKeyValueTest extends AbstractSignatureCreationTest {
 
     @ParameterizedTest
     @CsvSource({
-        "http://www.w3.org/tbd#ml-dsa-44,ML-DSA-44",
-        "http://www.w3.org/tbd#ml-dsa-65,ML-DSA-65",
-        "http://www.w3.org/tbd#ml-dsa-87,ML-DSA-87"
+        "http://www.w3.org/2026/08/xmldsig-more#ml-dsa-44,ML-DSA-44",
+        "http://www.w3.org/2026/08/xmldsig-more#ml-dsa-65,ML-DSA-65",
+        "http://www.w3.org/2026/08/xmldsig-more#ml-dsa-87,ML-DSA-87"
     })
     void testKeyValueEmitsDerEncodedKeyValue(String sigAlgorithm, String jcaAlgorithm) throws Exception {
         Assumptions.assumeTrue(isBcInstalled() && keyPairs.containsKey(jcaAlgorithm),

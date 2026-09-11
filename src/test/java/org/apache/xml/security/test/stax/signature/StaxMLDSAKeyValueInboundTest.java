@@ -84,9 +84,9 @@ class StaxMLDSAKeyValueInboundTest extends AbstractSignatureCreationTest {
 
     @ParameterizedTest
     @CsvSource({
-        "http://www.w3.org/tbd#ml-dsa-44,ML-DSA-44",
-        "http://www.w3.org/tbd#ml-dsa-65,ML-DSA-65",
-        "http://www.w3.org/tbd#ml-dsa-87,ML-DSA-87"
+        "http://www.w3.org/2026/08/xmldsig-more#ml-dsa-44,ML-DSA-44",
+        "http://www.w3.org/2026/08/xmldsig-more#ml-dsa-65,ML-DSA-65",
+        "http://www.w3.org/2026/08/xmldsig-more#ml-dsa-87,ML-DSA-87"
     })
     void testInboundVerifiesWithKeyFromDerEncodedKeyValue(String sigAlgorithm, String jcaAlgorithm) throws Exception {
         Assumptions.assumeTrue(isBcInstalled() && keyPairs.containsKey(jcaAlgorithm),
@@ -114,9 +114,9 @@ class StaxMLDSAKeyValueInboundTest extends AbstractSignatureCreationTest {
 
     @ParameterizedTest
     @CsvSource({
-        "http://www.w3.org/tbd#ml-dsa-44,ML-DSA-44",
-        "http://www.w3.org/tbd#ml-dsa-65,ML-DSA-65",
-        "http://www.w3.org/tbd#ml-dsa-87,ML-DSA-87"
+        "http://www.w3.org/2026/08/xmldsig-more#ml-dsa-44,ML-DSA-44",
+        "http://www.w3.org/2026/08/xmldsig-more#ml-dsa-65,ML-DSA-65",
+        "http://www.w3.org/2026/08/xmldsig-more#ml-dsa-87,ML-DSA-87"
     })
     void testInboundTamperedSignatureRejected(String sigAlgorithm, String jcaAlgorithm) throws Exception {
         Assumptions.assumeTrue(isBcInstalled() && keyPairs.containsKey(jcaAlgorithm),
@@ -150,9 +150,9 @@ class StaxMLDSAKeyValueInboundTest extends AbstractSignatureCreationTest {
      */
     @ParameterizedTest
     @CsvSource({
-        "http://www.w3.org/tbd#ml-dsa-44,ML-DSA-44",
-        "http://www.w3.org/tbd#ml-dsa-65,ML-DSA-65",
-        "http://www.w3.org/tbd#ml-dsa-87,ML-DSA-87"
+        "http://www.w3.org/2026/08/xmldsig-more#ml-dsa-44,ML-DSA-44",
+        "http://www.w3.org/2026/08/xmldsig-more#ml-dsa-65,ML-DSA-65",
+        "http://www.w3.org/2026/08/xmldsig-more#ml-dsa-87,ML-DSA-87"
     })
     void testInboundVerifiesWithDerEncodedKeyValueAsKeyInfoChild(String sigAlgorithm, String jcaAlgorithm)
             throws Exception {
@@ -212,9 +212,9 @@ class StaxMLDSAKeyValueInboundTest extends AbstractSignatureCreationTest {
      */
     @ParameterizedTest
     @CsvSource({
-        "http://www.w3.org/tbd#ml-dsa-44,ML-DSA-44",
-        "http://www.w3.org/tbd#ml-dsa-65,ML-DSA-65",
-        "http://www.w3.org/tbd#ml-dsa-87,ML-DSA-87"
+        "http://www.w3.org/2026/08/xmldsig-more#ml-dsa-44,ML-DSA-44",
+        "http://www.w3.org/2026/08/xmldsig-more#ml-dsa-65,ML-DSA-65",
+        "http://www.w3.org/2026/08/xmldsig-more#ml-dsa-87,ML-DSA-87"
     })
     void testInboundGarbageDerContentRejectedCleanly(String sigAlgorithm, String jcaAlgorithm) throws Exception {
         Assumptions.assumeTrue(isBcInstalled() && keyPairs.containsKey(jcaAlgorithm),
