@@ -18,6 +18,8 @@
  */
 package org.apache.xml.security.keys.content;
 
+import java.lang.System.Logger;
+import java.lang.System.Logger.Level;
 import java.security.KeyFactory;
 import java.security.NoSuchAlgorithmException;
 import java.security.PublicKey;
@@ -35,6 +37,8 @@ import org.w3c.dom.Element;
  *
  */
 public class DEREncodedKeyValue extends Signature11ElementProxy implements KeyInfoContent {
+
+    private static final Logger LOG = System.getLogger(DEREncodedKeyValue.class.getName());
 
     /** JCA algorithm key types supported by this implementation. */
     private static final String[] supportedKeyTypes = { "RSA", "DSA", "EC",
@@ -121,8 +125,9 @@ public class DEREncodedKeyValue extends Signature11ElementProxy implements KeyIn
                 if (publicKey != null) {
                     return publicKey;
                 }
-            } catch (NoSuchAlgorithmException | InvalidKeySpecException | RuntimeException e) { //NOPMD
-                // Do nothing, try the next type. Some providers (e.g. BouncyCastle's XDH/EdDSA
+            } catch (NoSuchAlgorithmException | InvalidKeySpecException | RuntimeException e) {
+                LOG.log(Level.DEBUG, () -> "Unable to decode DEREncodedKeyValue as key type " + keyType, e);
+                // Try the next type. Some providers (e.g. BouncyCastle's XDH/EdDSA
                 // KeyFactorySpi) throw an unchecked exception such as ArrayIndexOutOfBoundsException
                 // instead of InvalidKeySpecException for malformed or short input, which must not
                 // propagate since the encoded key here is untrusted, attacker-controlled content.
