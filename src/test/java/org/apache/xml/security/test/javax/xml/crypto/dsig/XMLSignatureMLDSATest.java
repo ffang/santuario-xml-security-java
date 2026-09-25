@@ -42,11 +42,13 @@ import javax.xml.crypto.dom.DOMStructure;
 import javax.xml.crypto.dsig.CanonicalizationMethod;
 import javax.xml.crypto.dsig.DigestMethod;
 import javax.xml.crypto.dsig.Reference;
+import javax.xml.crypto.dsig.SignatureMethod;
 import javax.xml.crypto.dsig.SignedInfo;
 import javax.xml.crypto.dsig.Transform;
 import javax.xml.crypto.dsig.XMLObject;
 import javax.xml.crypto.dsig.XMLSignatureFactory;
 import javax.xml.crypto.dsig.dom.DOMSignContext;
+import javax.xml.crypto.dsig.dom.DOMValidateContext;
 import javax.xml.crypto.dsig.keyinfo.KeyInfo;
 import javax.xml.crypto.dsig.keyinfo.KeyInfoFactory;
 import javax.xml.crypto.dsig.spec.C14NMethodParameterSpec;
@@ -68,6 +70,7 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.w3c.dom.Document;
@@ -359,6 +362,103 @@ class XMLSignatureMLDSATest extends XMLSignatureAbstract {
             org.apache.xml.security.signature.XMLSignatureException.class,
             () -> signature.checkSignatureValue(cert));
         Assertions.assertTrue(ex.getMessage().contains("SignatureContext"), ex.getMessage());
+    }
+
+    /**
+     * SignatureContext is only defined for ML-DSA, so only an ML-DSA signature is checked for it.
+     * The realistic case is nesting: an outer RSA enveloping signature (e.g. a notarization or a
+     * classical signature added during PQC migration) whose ds:Object holds a document that already
+     * carries an ML-DSA signature with a SignatureContext. The element then sits in the outer
+     * signature's subtree, but belongs to the inner one and must not break the outer signature,
+     * on either the JSR-105 or the native API. The inner signature is only a structural stand-in
+     * and is never verified, so this runs without an ML-DSA provider.
+     */
+    @Test
+    void testOuterNonMLDSASignatureOverMLDSASignedDocument() throws Exception {
+        KeyPair keyPair = KeyPairGenerator.getInstance("RSA").generateKeyPair();
+
+        // JSR-105 enveloping RSA signature over the ML-DSA signed document
+        Document doc = TestUtils.newDocument();
+        XMLSignatureFactory fac = XMLSignatureFactory.getInstance("DOM");
+        Reference ref = fac.newReference("#notarized", fac.newDigestMethod(DigestMethod.SHA256, null));
+        SignedInfo si = fac.newSignedInfo(
+            fac.newCanonicalizationMethod(CanonicalizationMethod.EXCLUSIVE, (C14NMethodParameterSpec) null),
+            fac.newSignatureMethod(SignatureMethod.RSA_SHA256, null),
+            Collections.singletonList(ref));
+        XMLObject obj = fac.newXMLObject(
+            Collections.singletonList(new DOMStructure(createMLDSASignedDocument(doc))), "notarized", null, null);
+        javax.xml.crypto.dsig.XMLSignature sig =
+            fac.newXMLSignature(si, null, Collections.singletonList(obj), null, null);
+        sig.sign(new DOMSignContext(keyPair.getPrivate(), doc));
+
+        ByteArrayOutputStream bos = new ByteArrayOutputStream();
+        XMLUtils.outputDOMc14nWithComments(doc, bos);
+        byte[] signedXml = bos.toByteArray();
+
+        Document parsed;
+        try (ByteArrayInputStream is = new ByteArrayInputStream(signedXml)) {
+            parsed = XMLUtils.read(is, false);
+        }
+        Element outerSig = parsed.getDocumentElement();
+        Assertions.assertEquals(1,
+            outerSig.getElementsByTagNameNS(SIGNATURE_CONTEXT_NS, "SignatureContext").getLength(),
+            "The inner SignatureContext must lie within the outer signature");
+        DOMValidateContext vc = new DOMValidateContext(keyPair.getPublic(), outerSig);
+        Assertions.assertTrue(fac.unmarshalXMLSignature(vc).validate(vc),
+            "An outer RSA signature over an ML-DSA signed document must validate");
+
+        // native verify of the same document
+        Element object = (Element) outerSig.getElementsByTagNameNS(Constants.SignatureSpecNS, "Object").item(0);
+        object.setIdAttributeNS(null, Constants._ATT_ID, true);
+        Assertions.assertTrue(new XMLSignature(outerSig, "").checkSignatureValue(keyPair.getPublic()));
+
+        // native enveloping RSA sign and verify over the ML-DSA signed document
+        Document nativeDoc = TestUtils.newDocument();
+        Element canon = XMLUtils.createElementInSignatureSpace(nativeDoc, Constants._TAG_CANONICALIZATIONMETHOD);
+        canon.setAttributeNS(null, Constants._ATT_ALGORITHM, Canonicalizer.ALGO_ID_C14N_EXCL_OMIT_COMMENTS);
+        SignatureAlgorithm sigAlg = new SignatureAlgorithm(nativeDoc, XMLSignature.ALGO_ID_SIGNATURE_RSA_SHA256);
+        XMLSignature signature = new XMLSignature(nativeDoc, null, sigAlg.getElement(), canon);
+        nativeDoc.appendChild(signature.getElement());
+
+        ObjectContainer container = new ObjectContainer(nativeDoc);
+        container.setId("notarized");
+        container.appendChild(createMLDSASignedDocument(nativeDoc));
+        signature.appendObject(container);
+        signature.addDocument("#notarized", null, MessageDigestAlgorithm.ALGO_ID_DIGEST_SHA256);
+
+        signature.sign(keyPair.getPrivate());
+        Assertions.assertTrue(signature.checkSignatureValue(keyPair.getPublic()));
+    }
+
+    /**
+     * Builds a document carrying an ML-DSA-65 {@code ds:Signature} with a {@code SignatureContext}
+     * in its {@code ds:Object}. Only the structure matters here: the signature value is a placeholder.
+     */
+    private static Element createMLDSASignedDocument(Document doc) {
+        Element signedDoc = doc.createElementNS(null, "SignedDocument");
+        Element content = doc.createElementNS(null, "Content");
+        content.setTextContent("Some data signed with ML-DSA");
+        signedDoc.appendChild(content);
+
+        Element innerSig = XMLUtils.createElementInSignatureSpace(doc, Constants._TAG_SIGNATURE);
+        innerSig.setAttributeNS(Constants.NamespaceSpecNS, "xmlns:" + innerSig.getPrefix(), Constants.SignatureSpecNS);
+        Element signedInfo = XMLUtils.createElementInSignatureSpace(doc, Constants._TAG_SIGNEDINFO);
+        Element sigMethod = XMLUtils.createElementInSignatureSpace(doc, Constants._TAG_SIGNATUREMETHOD);
+        sigMethod.setAttributeNS(null, Constants._ATT_ALGORITHM, XMLSignature.ALGO_ID_SIGNATURE_MLDSA_65);
+        signedInfo.appendChild(sigMethod);
+        innerSig.appendChild(signedInfo);
+        Element sigValue = XMLUtils.createElementInSignatureSpace(doc, Constants._TAG_SIGNATUREVALUE);
+        sigValue.setTextContent(Base64.getEncoder().encodeToString(new byte[32]));
+        innerSig.appendChild(sigValue);
+
+        Element innerObject = XMLUtils.createElementInSignatureSpace(doc, Constants._TAG_OBJECT);
+        Element ctx = doc.createElementNS(SIGNATURE_CONTEXT_NS, "dsig-more:SignatureContext");
+        ctx.setAttributeNS("http://www.w3.org/2000/xmlns/", "xmlns:dsig-more", SIGNATURE_CONTEXT_NS);
+        ctx.setTextContent(Base64.getEncoder().encodeToString("email-signature".getBytes(StandardCharsets.UTF_8)));
+        innerObject.appendChild(ctx);
+        innerSig.appendChild(innerObject);
+        signedDoc.appendChild(innerSig);
+        return signedDoc;
     }
 
     /**

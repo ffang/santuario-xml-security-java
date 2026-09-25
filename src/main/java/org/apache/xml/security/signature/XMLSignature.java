@@ -30,6 +30,7 @@ import java.security.spec.AlgorithmParameterSpec;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 
 import javax.crypto.SecretKey;
 
@@ -246,6 +247,10 @@ public final class XMLSignature extends SignatureElementProxy {
             Constants.XML_DSIG_NS_MORE_07_05 + "rsa-pss";
 
     private static final Logger LOG = System.getLogger(XMLSignature.class.getName());
+
+    // ML-DSA URIs, the only algorithms for which a SignatureContext element is defined
+    private static final Set<String> ML_DSA_ALGORITHMS = Set.of(
+        ALGO_ID_SIGNATURE_MLDSA_44, ALGO_ID_SIGNATURE_MLDSA_65, ALGO_ID_SIGNATURE_MLDSA_87);
 
     /** ds:Signature.ds:SignedInfo element */
     private final SignedInfo signedInfo;
@@ -912,12 +917,16 @@ public final class XMLSignature extends SignatureElementProxy {
      * to ML-DSA (see the Non-Goals of JEP 497), so such a signature can be neither
      * created nor verified correctly here; bail out rather than silently ignoring
      * the context and producing/accepting a signature that does not match it.
+     * The element is only defined for ML-DSA, so signatures using any other
+     * algorithm are not inspected.
      *
      * @throws XMLSignatureException if a {@code SignatureContext} element is present
      */
     private void checkForUnsupportedSignatureContext() throws XMLSignatureException {
         Element signatureElement = getElement();
-        if (signatureElement == null) {
+        String signatureMethodURI = signedInfo.getSignatureMethodURI();
+        if (signatureElement == null || signatureMethodURI == null
+            || !ML_DSA_ALGORITHMS.contains(signatureMethodURI)) {
             return;
         }
         NodeList contexts = signatureElement.getElementsByTagNameNS(

@@ -38,6 +38,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import javax.xml.crypto.KeySelector;
 import javax.xml.crypto.KeySelectorException;
@@ -76,6 +77,12 @@ public final class DOMXMLSignature extends DOMStructure
     implements XMLSignature {
 
     private static final Logger LOG = System.getLogger(DOMXMLSignature.class.getName());
+
+    // ML-DSA URIs, the only algorithms for which a SignatureContext element is defined
+    private static final Set<String> ML_DSA_ALGORITHMS = Set.of(
+        DOMSignatureMethod.ML_DSA_44,
+        DOMSignatureMethod.ML_DSA_65,
+        DOMSignatureMethod.ML_DSA_87);
 
     private final String id;
     private final SignatureValue sv;
@@ -349,12 +356,15 @@ public final class DOMXMLSignature extends DOMStructure
      * {@code java.security.Signature} API offers no way to pass a signature context
      * to ML-DSA (see the Non-Goals of JEP 497), so such a signature can be neither
      * created nor verified correctly here; bail out rather than silently ignoring
-     * the context.
+     * the context. The element is only defined for ML-DSA, so signatures using any
+     * other algorithm are not inspected.
      */
-    private static void checkForUnsupportedSignatureContext(Element sigElem)
+    private void checkForUnsupportedSignatureContext(Element sigElem)
         throws XMLSignatureException
     {
-        if (sigElem == null) {
+        String signatureMethodURI = si.getSignatureMethod().getAlgorithm();
+        if (sigElem == null || signatureMethodURI == null
+            || !ML_DSA_ALGORITHMS.contains(signatureMethodURI)) {
             return;
         }
         NodeList contexts = sigElem.getElementsByTagNameNS(
