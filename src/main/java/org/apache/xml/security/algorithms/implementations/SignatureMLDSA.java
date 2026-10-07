@@ -39,7 +39,7 @@ import org.apache.xml.security.utils.XMLUtils;
 /**
  * ML-DSA (FIPS 204) signature algorithm implementation for XML-Dsig.
  * Supports ML-DSA-44 (NIST security level 2), ML-DSA-65 (level 3),
- * and ML-DSA-87 (level 5). Requires BouncyCastle 1.81+ as the JCA provider.
+ * and ML-DSA-87 (level 5).
  */
 public abstract class SignatureMLDSA extends SignatureAlgorithmSpi {
 

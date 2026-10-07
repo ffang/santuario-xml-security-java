@@ -72,8 +72,8 @@ public class DEREncodedKeyValueSecurityToken extends AbstractInboundSecurityToke
                 // Not this key type; try the next one. Some providers (e.g. BouncyCastle's
                 // XDH/EdDSA KeyFactorySpi) throw an unchecked exception such as
                 // ArrayIndexOutOfBoundsException instead of InvalidKeySpecException for
-                // malformed or short input, which must not propagate since encodedKey here is
-                // untrusted, attacker-controlled inbound content.
+                // malformed or short input, which must not propagate since encodedKey here
+                // could be untrusted.
             }
         }
         throw new XMLSecurityException("stax.unsupportedKeyValue");

@@ -130,7 +130,7 @@ public class DEREncodedKeyValue extends Signature11ElementProxy implements KeyIn
                 // Try the next type. Some providers (e.g. BouncyCastle's XDH/EdDSA
                 // KeyFactorySpi) throw an unchecked exception such as ArrayIndexOutOfBoundsException
                 // instead of InvalidKeySpecException for malformed or short input, which must not
-                // propagate since the encoded key here is untrusted, attacker-controlled content.
+                // propagate since the encoded key here could be untrusted.
             }
         }
         throw new XMLSecurityException("DEREncodedKeyValue.UnsupportedEncodedKey");
