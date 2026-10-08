@@ -95,6 +95,8 @@ import org.w3c.dom.Text;
  */
 class XMLSignatureMLDSATest extends XMLSignatureAbstract {
 
+    private static final System.Logger LOG = System.getLogger(XMLSignatureMLDSATest.class.getName());
+
     static final char[] KEY_PASSWORD = "security".toCharArray();
 
     private static boolean mlDsaAvailable;
@@ -132,6 +134,7 @@ class XMLSignatureMLDSATest extends XMLSignatureAbstract {
             }
             mlDsaAvailable = true;
         } catch (Exception e) {
+            LOG.log(System.Logger.Level.WARNING, "ML-DSA keys could not be generated, skipping ML-DSA tests", e);
             mlDsaAvailable = false;
         }
     }

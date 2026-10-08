@@ -35,9 +35,8 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  * {@code KeyFactory}. Some providers throw an unchecked exception for malformed or short input
  * instead of {@code InvalidKeySpecException} - notably BouncyCastle 1.85's XDH/EdDSA
  * KeyFactorySpi throws {@code ArrayIndexOutOfBoundsException}. Since a DEREncodedKeyValue read
- * from an inbound document (via {@code DEREncodedKeyValueResolver}, a default KeyResolver) is
- * untrusted, attacker-controlled content, such an exception must not propagate out of key
- * resolution.
+ * from an inbound document (via {@code DEREncodedKeyValueResolver}, a default KeyResolver) may be
+ * untrusted content, such an exception must not propagate out of key resolution.
  *
  * <p>The unchecked exception is only observed when BouncyCastle is the provider selected for
  * XDH/EdDSA, i.e. registered ahead of the JDK's own providers (a common BouncyCastle-primary

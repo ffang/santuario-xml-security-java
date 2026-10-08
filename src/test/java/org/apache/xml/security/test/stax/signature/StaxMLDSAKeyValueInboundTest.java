@@ -208,7 +208,7 @@ class StaxMLDSAKeyValueInboundTest extends AbstractSignatureCreationTest {
      * must be rejected cleanly at key resolution, not crash the pipeline with an uncaught
      * RuntimeException. Some providers throw an unchecked exception (e.g. BouncyCastle's
      * XDH/EdDSA KeyFactorySpi throws ArrayIndexOutOfBoundsException) for malformed input, and
-     * inbound KeyInfo content is attacker-controlled.
+     * inbound KeyInfo content could be untrusted.
      */
     @ParameterizedTest
     @CsvSource({

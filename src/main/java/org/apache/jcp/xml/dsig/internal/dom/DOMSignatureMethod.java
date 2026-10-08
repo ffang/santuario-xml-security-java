@@ -270,8 +270,6 @@ public abstract class DOMSignatureMethod extends AbstractDOMSignatureMethod {
         registerECDSA(ECDSA_SHA3_256, "SHA3-256");
         registerECDSA(ECDSA_SHA3_384, "SHA3-384");
         registerECDSA(ECDSA_SHA3_512, "SHA3-512");
-        // "RIPEMD160withECDSAinP1363Format" - is this real? kept as-is from the
-        // pre-existing per-algorithm implementation.
         registerECDSA(ECDSA_RIPEMD160, "RIPEMD160");
 
         register(ED25519,
