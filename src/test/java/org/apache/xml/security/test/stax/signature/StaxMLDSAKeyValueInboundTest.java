@@ -23,6 +23,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
+import java.security.NoSuchAlgorithmException;
 import java.security.PublicKey;
 import java.util.ArrayList;
 import java.util.Base64;
@@ -65,20 +66,27 @@ import org.w3c.dom.Text;
  */
 class StaxMLDSAKeyValueInboundTest extends AbstractSignatureCreationTest {
 
-    private static final Map<String, KeyPair> keyPairs = new HashMap<>();
+    // StAX destroys signing keys after use, so generate a fresh key pair for each test.
+    private static final Map<String, KeyPairGenerator> keyPairGenerators = new HashMap<>();
 
     @BeforeAll
-    static void generateKeys() throws Exception {
-        if (!isBcInstalled()) {
-            return;
-        }
-        try {
-            for (String alg : new String[]{"ML-DSA-44", "ML-DSA-65", "ML-DSA-87"}) {
-                KeyPairGenerator kpg = KeyPairGenerator.getInstance(alg, "BC");
-                keyPairs.put(alg, kpg.generateKeyPair());
+    static void initializeKeyPairGenerators() throws Exception {
+        for (String alg : new String[]{"ML-DSA-44", "ML-DSA-65", "ML-DSA-87"}) {
+            KeyPairGenerator kpg;
+            try {
+                // Use the JDK provider when available, or BC registered by the test superclass.
+                kpg = KeyPairGenerator.getInstance(alg);
+            } catch (NoSuchAlgorithmException e) {
+                if (Runtime.version().feature() >= 24) {
+                    throw e;
+                }
+                System.getLogger(StaxMLDSAKeyValueInboundTest.class.getName()).log(
+                    System.Logger.Level.INFO, "Skipping {0}: no ML-DSA provider is available", alg);
+                continue;
             }
-        } catch (Exception e) {
-            // ML-DSA not available with this BC version
+            System.getLogger(StaxMLDSAKeyValueInboundTest.class.getName()).log(
+                System.Logger.Level.INFO, "Testing {0} with provider {1}", alg, kpg.getProvider().getName());
+            keyPairGenerators.put(alg, kpg);
         }
     }
 
@@ -89,10 +97,10 @@ class StaxMLDSAKeyValueInboundTest extends AbstractSignatureCreationTest {
         "http://www.w3.org/2026/08/xmldsig-more#ml-dsa-87,ML-DSA-87"
     })
     void testInboundVerifiesWithKeyFromDerEncodedKeyValue(String sigAlgorithm, String jcaAlgorithm) throws Exception {
-        Assumptions.assumeTrue(isBcInstalled() && keyPairs.containsKey(jcaAlgorithm),
-            "ML-DSA requires BouncyCastle 1.81+");
+        Assumptions.assumeTrue(keyPairGenerators.containsKey(jcaAlgorithm),
+            "ML-DSA requires a JDK provider or BouncyCastle 1.81+");
 
-        KeyPair kp = keyPairs.get(jcaAlgorithm);
+        KeyPair kp = keyPairGenerators.get(jcaAlgorithm).generateKeyPair();
         byte[] signed = signWithKeyValue(sigAlgorithm, kp);
 
         List<SecurityEvent> events = new ArrayList<>();
@@ -119,16 +127,40 @@ class StaxMLDSAKeyValueInboundTest extends AbstractSignatureCreationTest {
         "http://www.w3.org/2026/08/xmldsig-more#ml-dsa-87,ML-DSA-87"
     })
     void testInboundTamperedSignatureRejected(String sigAlgorithm, String jcaAlgorithm) throws Exception {
-        Assumptions.assumeTrue(isBcInstalled() && keyPairs.containsKey(jcaAlgorithm),
-            "ML-DSA requires BouncyCastle 1.81+");
+        Assumptions.assumeTrue(keyPairGenerators.containsKey(jcaAlgorithm),
+            "ML-DSA requires a JDK provider or BouncyCastle 1.81+");
 
-        KeyPair kp = keyPairs.get(jcaAlgorithm);
+        KeyPair kp = keyPairGenerators.get(jcaAlgorithm).generateKeyPair();
         byte[] tampered = tamperSignatureValue(signWithKeyValue(sigAlgorithm, kp));
 
         // The key still resolves from the document; the rejection must come from signature
         // validation itself, not from a failure to resolve the key.
         XMLStreamException ex = Assertions.assertThrows(XMLStreamException.class,
             () -> verifyInbound(tampered, new ArrayList<>()));
+        String chain = messageChain(ex);
+        Assertions.assertTrue(chain.contains("INVALID signature"),
+            "Expected a core-validation failure, got: " + chain);
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+        "http://www.w3.org/2026/08/xmldsig-more#ml-dsa-44,ML-DSA-44",
+        "http://www.w3.org/2026/08/xmldsig-more#ml-dsa-65,ML-DSA-65",
+        "http://www.w3.org/2026/08/xmldsig-more#ml-dsa-87,ML-DSA-87"
+    })
+    void testInboundWrongPublicKeyRejected(String sigAlgorithm, String jcaAlgorithm) throws Exception {
+        Assumptions.assumeTrue(keyPairGenerators.containsKey(jcaAlgorithm),
+            "ML-DSA requires a JDK provider or BouncyCastle 1.81+");
+
+        byte[] signed = signWithKeyValue(sigAlgorithm, keyPairGenerators.get(jcaAlgorithm).generateKeyPair());
+        verifyInbound(signed, new ArrayList<>());
+
+        // Replace only the embedded key with another valid key of the same parameter set.
+        // Key resolution must succeed; signature validation must reject the unchanged signature.
+        PublicKey wrongKey = KeyPairGenerator.getInstance(jcaAlgorithm).generateKeyPair().getPublic();
+        byte[] wrongKeyDocument = replaceDerEncodedKeyValue(signed, wrongKey.getEncoded());
+        XMLStreamException ex = Assertions.assertThrows(XMLStreamException.class,
+            () -> verifyInbound(wrongKeyDocument, new ArrayList<>()));
         String chain = messageChain(ex);
         Assertions.assertTrue(chain.contains("INVALID signature"),
             "Expected a core-validation failure, got: " + chain);
@@ -156,10 +188,10 @@ class StaxMLDSAKeyValueInboundTest extends AbstractSignatureCreationTest {
     })
     void testInboundVerifiesWithDerEncodedKeyValueAsKeyInfoChild(String sigAlgorithm, String jcaAlgorithm)
             throws Exception {
-        Assumptions.assumeTrue(isBcInstalled() && keyPairs.containsKey(jcaAlgorithm),
-            "ML-DSA requires BouncyCastle 1.81+");
+        Assumptions.assumeTrue(keyPairGenerators.containsKey(jcaAlgorithm),
+            "ML-DSA requires a JDK provider or BouncyCastle 1.81+");
 
-        KeyPair kp = keyPairs.get(jcaAlgorithm);
+        KeyPair kp = keyPairGenerators.get(jcaAlgorithm).generateKeyPair();
         byte[] signed = moveDerEncodedKeyValueToKeyInfo(signWithKeyValue(sigAlgorithm, kp));
 
         List<SecurityEvent> events = new ArrayList<>();
@@ -217,10 +249,10 @@ class StaxMLDSAKeyValueInboundTest extends AbstractSignatureCreationTest {
         "http://www.w3.org/2026/08/xmldsig-more#ml-dsa-87,ML-DSA-87"
     })
     void testInboundGarbageDerContentRejectedCleanly(String sigAlgorithm, String jcaAlgorithm) throws Exception {
-        Assumptions.assumeTrue(isBcInstalled() && keyPairs.containsKey(jcaAlgorithm),
-            "ML-DSA requires BouncyCastle 1.81+");
+        Assumptions.assumeTrue(keyPairGenerators.containsKey(jcaAlgorithm),
+            "ML-DSA requires a JDK provider or BouncyCastle 1.81+");
 
-        KeyPair kp = keyPairs.get(jcaAlgorithm);
+        KeyPair kp = keyPairGenerators.get(jcaAlgorithm).generateKeyPair();
         byte[] corrupted = corruptDerEncodedKeyValue(signWithKeyValue(sigAlgorithm, kp));
 
         XMLStreamException ex = Assertions.assertThrows(XMLStreamException.class,
@@ -232,18 +264,22 @@ class StaxMLDSAKeyValueInboundTest extends AbstractSignatureCreationTest {
 
     /** Replaces the DEREncodedKeyValue's base64 content with bytes that decode to no known SubjectPublicKeyInfo. */
     private byte[] corruptDerEncodedKeyValue(byte[] signed) throws Exception {
+        byte[] garbage = {0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07};
+        return replaceDerEncodedKeyValue(signed, garbage);
+    }
+
+    private byte[] replaceDerEncodedKeyValue(byte[] signed, byte[] encodedKey) throws Exception {
         Document document;
         try (InputStream is = new ByteArrayInputStream(signed)) {
             document = XMLUtils.read(is, false);
         }
         Element der = (Element) document.getElementsByTagNameNS(
             "http://www.w3.org/2009/xmldsig11#", "DEREncodedKeyValue").item(0);
-        byte[] garbage = {0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07};
         NodeList children = der.getChildNodes();
         for (int i = children.getLength() - 1; i >= 0; i--) {
             der.removeChild(children.item(i));
         }
-        der.appendChild(document.createTextNode(Base64.getEncoder().encodeToString(garbage)));
+        der.appendChild(document.createTextNode(Base64.getEncoder().encodeToString(encodedKey)));
 
         ByteArrayOutputStream bos = new ByteArrayOutputStream();
         javax.xml.transform.TransformerFactory.newInstance().newTransformer().transform(

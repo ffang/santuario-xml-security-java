@@ -22,6 +22,7 @@ import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
+import java.security.NoSuchAlgorithmException;
 import java.security.PublicKey;
 import java.util.ArrayList;
 import java.util.Base64;
@@ -53,20 +54,27 @@ import org.w3c.dom.Text;
  */
 class StaxMLDSASignatureTest extends AbstractSignatureCreationTest {
 
-    private static final Map<String, KeyPair> keyPairs = new HashMap<>();
+    // StAX destroys signing keys after use, so generate a fresh key pair for each test.
+    private static final Map<String, KeyPairGenerator> keyPairGenerators = new HashMap<>();
 
     @BeforeAll
-    static void generateKeys() throws Exception {
-        if (!isBcInstalled()) {
-            return;
-        }
-        try {
-            for (String alg : new String[]{"ML-DSA-44", "ML-DSA-65", "ML-DSA-87"}) {
-                KeyPairGenerator kpg = KeyPairGenerator.getInstance(alg, "BC");
-                keyPairs.put(alg, kpg.generateKeyPair());
+    static void initializeKeyPairGenerators() throws Exception {
+        for (String alg : new String[]{"ML-DSA-44", "ML-DSA-65", "ML-DSA-87"}) {
+            KeyPairGenerator kpg;
+            try {
+                // Use the JDK provider when available, or BC registered by the test superclass.
+                kpg = KeyPairGenerator.getInstance(alg);
+            } catch (NoSuchAlgorithmException e) {
+                if (Runtime.version().feature() >= 24) {
+                    throw e;
+                }
+                System.getLogger(StaxMLDSASignatureTest.class.getName()).log(
+                    System.Logger.Level.INFO, "Skipping {0}: no ML-DSA provider is available", alg);
+                continue;
             }
-        } catch (Exception e) {
-            // ML-DSA not available with this BC version
+            System.getLogger(StaxMLDSASignatureTest.class.getName()).log(
+                System.Logger.Level.INFO, "Testing {0} with provider {1}", alg, kpg.getProvider().getName());
+            keyPairGenerators.put(alg, kpg);
         }
     }
 
@@ -77,8 +85,8 @@ class StaxMLDSASignatureTest extends AbstractSignatureCreationTest {
         "http://www.w3.org/2026/08/xmldsig-more#ml-dsa-87,ML-DSA-87"
     })
     void testMLDSASign(String sigAlgorithm, String jcaAlgorithm) throws Exception {
-        Assumptions.assumeTrue(isBcInstalled() && keyPairs.containsKey(jcaAlgorithm),
-            "ML-DSA requires BouncyCastle 1.81+");
+        Assumptions.assumeTrue(keyPairGenerators.containsKey(jcaAlgorithm),
+            "ML-DSA requires a JDK provider or BouncyCastle 1.81+");
 
         XMLSecurityProperties properties = new XMLSecurityProperties();
         List<XMLSecurityConstants.Action> actions = new ArrayList<>();
@@ -87,7 +95,7 @@ class StaxMLDSASignatureTest extends AbstractSignatureCreationTest {
         properties.setSignatureKeyIdentifier(SecurityTokenConstants.KeyIdentifier_KeyValue);
         properties.setSignatureAlgorithm(sigAlgorithm);
 
-        KeyPair kp = keyPairs.get(jcaAlgorithm);
+        KeyPair kp = keyPairGenerators.get(jcaAlgorithm).generateKeyPair();
         properties.setSignatureKey(kp.getPrivate());
         properties.setSignatureVerificationKey(kp.getPublic());
 
@@ -115,14 +123,15 @@ class StaxMLDSASignatureTest extends AbstractSignatureCreationTest {
         "http://www.w3.org/2026/08/xmldsig-more#ml-dsa-87,ML-DSA-87"
     })
     void testMLDSAStaxTamperedSignatureRejected(String sigAlgorithm, String jcaAlgorithm) throws Exception {
-        Assumptions.assumeTrue(isBcInstalled() && keyPairs.containsKey(jcaAlgorithm),
-            "ML-DSA requires BouncyCastle 1.81+");
+        Assumptions.assumeTrue(keyPairGenerators.containsKey(jcaAlgorithm),
+            "ML-DSA requires a JDK provider or BouncyCastle 1.81+");
 
-        Document document = signWith(sigAlgorithm, jcaAlgorithm);
+        KeyPair kp = keyPairGenerators.get(jcaAlgorithm).generateKeyPair();
+        Document document = signWith(sigAlgorithm, kp);
         Element sigElement = tamperSignatureValue(document);
 
         XMLSignature signature = new XMLSignature(sigElement, "");
-        boolean coreValidity = signature.checkSignatureValue(keyPairs.get(jcaAlgorithm).getPublic());
+        boolean coreValidity = signature.checkSignatureValue(kp.getPublic());
         Assertions.assertFalse(coreValidity, "A tampered SignatureValue must not validate");
     }
 
@@ -133,13 +142,14 @@ class StaxMLDSASignatureTest extends AbstractSignatureCreationTest {
         "http://www.w3.org/2026/08/xmldsig-more#ml-dsa-87,ML-DSA-87"
     })
     void testMLDSAStaxWrongPublicKeyRejected(String sigAlgorithm, String jcaAlgorithm) throws Exception {
-        Assumptions.assumeTrue(isBcInstalled() && keyPairs.containsKey(jcaAlgorithm),
-            "ML-DSA requires BouncyCastle 1.81+");
+        Assumptions.assumeTrue(keyPairGenerators.containsKey(jcaAlgorithm),
+            "ML-DSA requires a JDK provider or BouncyCastle 1.81+");
 
-        Document document = signWith(sigAlgorithm, jcaAlgorithm);
+        KeyPair kp = keyPairGenerators.get(jcaAlgorithm).generateKeyPair();
+        Document document = signWith(sigAlgorithm, kp);
         Element sigElement = (Element) document.getElementsByTagNameNS(Constants.SignatureSpecNS, "Signature").item(0);
 
-        KeyPairGenerator kpg = KeyPairGenerator.getInstance(jcaAlgorithm, "BC");
+        KeyPairGenerator kpg = KeyPairGenerator.getInstance(jcaAlgorithm);
         PublicKey wrongPublicKey = kpg.generateKeyPair().getPublic();
 
         XMLSignature signature = new XMLSignature(sigElement, "");
@@ -147,7 +157,7 @@ class StaxMLDSASignatureTest extends AbstractSignatureCreationTest {
         Assertions.assertFalse(coreValidity, "Verification against the wrong public key must not validate");
     }
 
-    private Document signWith(String sigAlgorithm, String jcaAlgorithm) throws Exception {
+    private Document signWith(String sigAlgorithm, KeyPair kp) throws Exception {
         XMLSecurityProperties properties = new XMLSecurityProperties();
         List<XMLSecurityConstants.Action> actions = new ArrayList<>();
         actions.add(XMLSecurityConstants.SIGNATURE);
@@ -155,7 +165,6 @@ class StaxMLDSASignatureTest extends AbstractSignatureCreationTest {
         properties.setSignatureKeyIdentifier(SecurityTokenConstants.KeyIdentifier_KeyValue);
         properties.setSignatureAlgorithm(sigAlgorithm);
 
-        KeyPair kp = keyPairs.get(jcaAlgorithm);
         properties.setSignatureKey(kp.getPrivate());
         properties.setSignatureVerificationKey(kp.getPublic());
 

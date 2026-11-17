@@ -23,6 +23,7 @@ import java.io.InputStream;
 import java.security.KeyFactory;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
+import java.security.NoSuchAlgorithmException;
 import java.security.PublicKey;
 import java.security.spec.X509EncodedKeySpec;
 import java.util.ArrayList;
@@ -59,20 +60,27 @@ import org.w3c.dom.NodeList;
 class StaxMLDSAKeyValueTest extends AbstractSignatureCreationTest {
 
     private static final String NS_DSIG11 = "http://www.w3.org/2009/xmldsig11#";
-    private static final Map<String, KeyPair> keyPairs = new HashMap<>();
+    // StAX destroys signing keys after use, so generate a fresh key pair for each test.
+    private static final Map<String, KeyPairGenerator> keyPairGenerators = new HashMap<>();
 
     @BeforeAll
-    static void generateKeys() throws Exception {
-        if (!isBcInstalled()) {
-            return;
-        }
-        try {
-            for (String alg : new String[]{"ML-DSA-44", "ML-DSA-65", "ML-DSA-87"}) {
-                KeyPairGenerator kpg = KeyPairGenerator.getInstance(alg, "BC");
-                keyPairs.put(alg, kpg.generateKeyPair());
+    static void initializeKeyPairGenerators() throws Exception {
+        for (String alg : new String[]{"ML-DSA-44", "ML-DSA-65", "ML-DSA-87"}) {
+            KeyPairGenerator kpg;
+            try {
+                // Use the JDK provider when available, or BC registered by the test superclass.
+                kpg = KeyPairGenerator.getInstance(alg);
+            } catch (NoSuchAlgorithmException e) {
+                if (Runtime.version().feature() >= 24) {
+                    throw e;
+                }
+                System.getLogger(StaxMLDSAKeyValueTest.class.getName()).log(
+                    System.Logger.Level.INFO, "Skipping {0}: no ML-DSA provider is available", alg);
+                continue;
             }
-        } catch (Exception e) {
-            // ML-DSA not available with this BC version
+            System.getLogger(StaxMLDSAKeyValueTest.class.getName()).log(
+                System.Logger.Level.INFO, "Testing {0} with provider {1}", alg, kpg.getProvider().getName());
+            keyPairGenerators.put(alg, kpg);
         }
     }
 
@@ -83,10 +91,10 @@ class StaxMLDSAKeyValueTest extends AbstractSignatureCreationTest {
         "http://www.w3.org/2026/08/xmldsig-more#ml-dsa-87,ML-DSA-87"
     })
     void testKeyValueEmitsDerEncodedKeyValue(String sigAlgorithm, String jcaAlgorithm) throws Exception {
-        Assumptions.assumeTrue(isBcInstalled() && keyPairs.containsKey(jcaAlgorithm),
-            "ML-DSA requires BouncyCastle 1.81+");
+        Assumptions.assumeTrue(keyPairGenerators.containsKey(jcaAlgorithm),
+            "ML-DSA requires a JDK provider or BouncyCastle 1.81+");
 
-        KeyPair kp = keyPairs.get(jcaAlgorithm);
+        KeyPair kp = keyPairGenerators.get(jcaAlgorithm).generateKeyPair();
         Document document = signWithKeyValue(sigAlgorithm, kp);
 
         // The KeyValue must not be empty (the pre-fix behavior) and must contain a DEREncodedKeyValue.
@@ -100,7 +108,7 @@ class StaxMLDSAKeyValueTest extends AbstractSignatureCreationTest {
 
         // The DER content must decode back to the signer's public key.
         byte[] encoded = Base64.getMimeDecoder().decode(der.item(0).getTextContent());
-        KeyFactory kf = KeyFactory.getInstance(jcaAlgorithm, "BC");
+        KeyFactory kf = KeyFactory.getInstance(jcaAlgorithm);
         PublicKey recovered = kf.generatePublic(new X509EncodedKeySpec(encoded));
         Assertions.assertArrayEquals(kp.getPublic().getEncoded(), recovered.getEncoded(),
             "DEREncodedKeyValue must round-trip to the signer's public key");
